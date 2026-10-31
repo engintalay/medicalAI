@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical AI - Admin Panel</title>
+    <link rel="stylesheet" href="/static/admin.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Sidebar Navigasyon -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Medical AI</h2>
+            <p class="subtitle">Admin Panel</p>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <a href="/admin" class="nav-item active">
+                <span class="nav-icon">📊</span>
+                <span class="nav-text">Dashboard</span>
+            </a>
+            
+            <a href="/admin/config" class="nav-item">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-text">Sistem Config</span>
+            </a>
+            
+            <a href="/admin/users" class="nav-item">
+                <span class="nav-icon">👥</span>
+                <span class="nav-text">Kullanıcılar</span>
+            </a>
+            
+            <a href="/admin/monitoring" class="nav-item">
+                <span class="nav-icon">📈</span>
+                <span class="nav-text">İzleme</span>
+            </a>
+            
+            <a href="/admin/logs" class="nav-item">
+                <span class="nav-icon">📝</span>
+                <span class="nav-text">Loglar</span>
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <a href="#" class="nav-item">
+                <span class="nav-icon">🚪</span>
+                <span class="nav-text">Çıkış Yap</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Ana İçerik -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="top-header">
+            <div class="header-left">
+                <h1 id="pageTitle">Dashboard</h1>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-info">
+                    <span id="userName" class="user-name">Sistem Yöneticisi</span>
+                    <span id="userEmail" class="user-email">admin@medicalai.com</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- İçerik Alanı -->
+        <div id="contentArea" class="content-area">
+            <!-- Buraya dinamik içerik yüklenecek -->
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>İçerik yükleniyor...</p>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="toast">
+            <span class="toast-message"></span>
+        </div>
+    </main>
+
+    <script src="/static/admin.js"></script>
+</body>
+</html>
