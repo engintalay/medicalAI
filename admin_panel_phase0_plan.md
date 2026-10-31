@@ -86,16 +86,19 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 | 4 | Admin Authentication (Login + JWT) | ✅ TAMAMLANDI | `config/auth_service.py` |
 | 5 | Admin Panel Routes (API) | ✅ TAMAMLANDI | `routes/admin.py` |
 | 6 | HTML Admin Arayüzü (Templates) | ✅ TAMAMLANDI | `templates/admin.html`, `static/` |
-| 7 | PostgreSQL Ayarları Endpoint & UI | ⬜ **Sıradaki!** | `admin.html` (config view) |
-| 8 | Kullanıcı Yönetimi + Script'ler | ⬜ Yapılacak | - |
+| 7 | PostgreSQL Ayarları Endpoint & UI | ✅ TAMAMLANDI | `templates/db-config.html` |
+| 8 | Kullanıcı Yönetimi + Script'ler | ⬜ **Sıradaki!** | - |
 
 ---
 
 ## 📌 Sonraki Adımlar
 
 **Konfigürasyon Hiyerarşisi**: ENV > .env > system_config (Yeni Mimari ile Güncellendi)
-**Tamamlanan**: Basamak 1, 2, 3, 4, 5, 6 ✅
+**Tamamlanan**: Basamak 1, 2, 3, 4, 5, 6, 7 ✅
 
-Şimdi **Basamak 7: PostgreSQL Ayarları Endpoint & UI** ile devam edebiliriz. Bu aşamada DB ayarları formunu HTML/JS olarak ekleyeceğiz.
+Şimdi **Basamak 8: Kullanıcı Yönetimi & Script'ler** ile devam edebiliriz. Bu aşamada:
+1.  **CRUD API** endpoint'lerini (`POST /admin/api/users`, `PUT`, `DELETE`) tamamlarız.
+2.  **Script'leri** yazıp test ederiz (`run.sh`, `restart.sh`, `stop.sh`).
+3.  **Faz 0'u sonlandırır** ve sistemin tam olarak çalıştığını doğrularız.
 
-**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 7: PostgreSQL Ayarları**)
+**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 8: Kullanıcı Yönetimi & Script'ler**)
