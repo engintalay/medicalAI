@@ -83,8 +83,8 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 | 1 | Ortam & Bağımlılıklar | ✅ TAMAMLANDI |
 | 2 | system\_config Tablosu + Seed | ✅ TAMAMLANDI |
 | 3 | Config Loader + Cache + Hot Reload | ✅ TAMAMLANDI |
-| 4 | Admin Authentication (Login + JWT) | ⬜ Yapılacak |
-| 5 | Admin Panel Routes (API) | ⬜ Yapılacak |
+| 4 | Admin Authentication (Login + JWT) | ✅ TAMAMLANDI |
+| 5 | Admin Panel Routes (API) | ✅ TAMAMLANDI |
 | 6 | HTML Admin Arayüzü (Templates) | ⬜ Yapılacak |
 | 7 | PostgreSQL Ayarları Endpoint & UI | ⬜ Yapılacak |
 | 8 | Kullanıcı Yönetimi + Script'ler | ⬜ Yapılacak |
@@ -94,7 +94,8 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 ## 📌 Sonraki Adımlar
 
 **Konfigürasyon Hiyerarşisi**: ENV > .env > system_config (Yeni Mimari ile Güncellendi)
+**Tamamlanan**: Basamak 1, 2, 3, 4, 5 ✅
 
-Bu planı onayladıktan sonra, **Basamak 4**'e geçerek **Admin Authentication** ile devam edebiliriz.
+Şimdi **Basamak 6: HTML Admin Arayüzü** ile devam edebiliriz. Bu aşamada web arayüzünü (Jinja2 templates) oluşturacağız.
 
-**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 4: Admin Authentication**)
+**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 6: HTML Admin Arayüzü**)
