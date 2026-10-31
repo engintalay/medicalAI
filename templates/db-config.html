@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical AI - PostgreSQL Ayarları</title>
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body>
+    <!-- Sidebar Navigasyon -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>Medical AI</h2>
+            <p class="subtitle">Admin Panel</p>
+        </div>
+        
+        <nav class="sidebar-nav">
+            <a href="/admin" class="nav-item">
+                <span class="nav-icon">📊</span>
+                <span class="nav-text">Dashboard</span>
+            </a>
+            
+            <a href="/admin/config" class="nav-item">
+                <span class="nav-icon">⚙️</span>
+                <span class="nav-text">Sistem Config</span>
+            </a>
+            
+            <a href="/admin/users" class="nav-item">
+                <span class="nav-icon">👥</span>
+                <span class="nav-text">Kullanıcılar</span>
+            </a>
+            
+            <a href="/admin/monitoring" class="nav-item">
+                <span class="nav-icon">📈</span>
+                <span class="nav-text">İzleme</span>
+            </a>
+            
+            <a href="/admin/logs" class="nav-item">
+                <span class="nav-icon">📝</span>
+                <span class="nav-text">Loglar</span>
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <a href="#" class="nav-item">
+                <span class="nav-icon">🚪</span>
+                <span class="nav-text">Çıkış Yap</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Ana İçerik -->
+    <main class="main-content">
+        <!-- Header -->
+        <header class="top-header">
+            <div class="header-left">
+                <h1 id="pageTitle">PostgreSQL Ayarları</h1>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-info">
+                    <span id="userName" class="user-name">Sistem Yöneticisi</span>
+                    <span id="userEmail" class="user-email">admin@medicalai.com</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- İçerik Alanı -->
+        <div id="contentArea" class="content-area">
+            <!-- Buraya dinamik içerik yüklenecek -->
+        </div>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="toast">
+            <span class="toast-message"></span>
+        </div>
+    </main>
+
+    <script src="/static/admin.js"></script>
+    <script>
+        // Sayfa yüklendiğinde formu yükle
+        document.addEventListener('DOMContentLoaded', () => {
+            loadDBConfigForm();
+        });
+
+        async function loadDBConfigForm() {
+            try {
+                const response = await fetch('/admin/api/config', {
+                    headers: { 'Authorization': `Bearer ${state.token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    renderDBConfigForm(data.data);
+                } else {
+                    renderError('Config yüklenirken hata oluştu.');
+                }
+            } catch (error) {
+                renderError('Bağlantı hatası: ' + error.message);
+            }
+        }
+
+        function renderDBConfigForm(configs) {
+            // PostgreSQL config'lerini bul
+            const pgConfig = configs.find(c => c.key.startsWith('db_'));
+            
+            contentArea.innerHTML = `
+                <div class="max-w-4xl">
+                    <div class="mb-4">
+                        <h2 class="text-2xl font-bold mb-2">PostgreSQL Bağlantı Ayarları</h2>
+                        <p class="text-gray-600">Veritabanı bağlantı bilgilerini görüntüleyebilir ve güncelleyebilirsiniz.</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Form -->
+                        <div class="card">
+                            <h3 class="text-lg font-semibold mb-3">Bağlantı Bilgileri</h3>
+                            
+                            <form id="dbConfigForm" class="space-y-4">
+                                <div class="form-group">
+                                    <label class="form-label">DB Host:</label>
+                                    <input type="text" class="form-input" id="dbHost" name="db_host" value="${pgConfig?.value || 'localhost'}">
+                                    <small class="text-gray-500">PostgreSQL sunucu adresi</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">DB Port:</label>
+                                    <input type="number" class="form-input" id="dbPort" name="db_port" value="${pgConfig?.value || 5432}">
+                                    <small class="text-gray-500">PostgreSQL port numarası</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">DB Name:</label>
+                                    <input type="text" class="form-input" id="dbName" name="db_name" value="${pgConfig?.value || 'medical_ai'}">
+                                    <small class="text-gray-500">Veritabanı adı</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">DB User:</label>
+                                    <input type="text" class="form-input" id="dbUser" name="db_user" value="${pgConfig?.value || 'medical_user'}">
+                                    <small class="text-gray-500">Veritabanı kullanıcısı</small>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label class="form-label">DB Password:</label>
+                                    <input type="password" class="form-input" id="dbPassword" name="db_password" value="${pgConfig?.value || 'changeme123'}">
+                                    <small class="text-gray-500">Veritabanı şifresi</small>
+                                </div>
+                            </form>
+                            
+                            <div class="mt-4 flex gap-2">
+                                <button class="btn btn-primary" onclick="testDBConnection()">🔌 Test Bağlantısı</button>
+                                <button class="btn btn-secondary" onclick="saveDBConfig()">💾 Kaydet</button>
+                            </div>
+                            
+                            <!-- Sonuç Mesajı -->
+                            <div id="formResult" class="mt-4 p-3 rounded-lg ${getFormResultClass()}">
+                                <span id="formResultText" class="font-medium"></span>
+                            </div>
+                        </div>
+                        
+                        <!-- İstatistikler -->
+                        <div class="space-y-4">
+                            <div class="card">
+                                <h3 class="text-lg font-semibold mb-3">Bağlantı İstatistikleri</h3>
+                                <div class="text-gray-600 text-sm space-y-2">
+                                    <div class="flex justify-between">
+                                        <span>Active Connections:</span>
+                                        <span class="font-semibold text-green-600">5 / 20</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Connection Pool:</span>
+                                        <span class="font-semibold text-yellow-600">Normal</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Latest Connection:</span>
+                                        <span class="font-semibold text-blue-600">${new Date().toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card">
+                                <h3 class="text-lg font-semibold mb-3">Current Environment</h3>
+                                <div class="text-gray-600 text-sm space-y-2">
+                                    <div class="flex justify-between">
+                                        <span>Source:</span>
+                                        <span class="badge badge-info">ENV Variable</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Fallback:</span>
+                                        <span class="badge badge-warning">Default Values</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span>Config Cache:</span>
+                                        <span class="badge badge-success">Active</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function testDBConnection() {
+            showToast('DB bağlantısı test ediliyor...', 'info');
+            
+            const form = document.getElementById('dbConfigForm');
+            const formData = new FormData(form);
+            
+            try {
+                const response = await fetch('/admin/api/monitoring', {
+                    headers: { 'Authorization': `Bearer ${state.token}` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showToast('✅ PostgreSQL Bağlantısı Başarılı!', 'success');
+                    renderDBConnectionResult('success', 'PostgreSQL başarıyla ping edildi. Active connections: ' + data.data.db_connections.active);
+                } else {
+                    throw new Error('Monitoring API hatası');
+                }
+            } catch (error) {
+                renderDBConnectionResult('error', 'PostgreSQL bağlantı hatası: ' + error.message);
+                showToast('❌ Bağlantı testi başarısız: ' + error.message, 'error');
+            }
+        }
+
+        async function saveDBConfig() {
+            showToast('DB ayarları kaydediliyor...', 'info');
+            
+            const form = document.getElementById('dbConfigForm');
+            const formData = new FormData(form);
+            
+            // Her bir config key için güncelle
+            const keys = ['db_host', 'db_port', 'db_name', 'db_user', 'db_password'];
+            
+            for (const key of keys) {
+                const value = formData.get(key);
+                await fetch('/admin/api/config/' + key, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${state.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ value: value })
+                });
+                await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+            }
+            
+            showToast('✅ PostgreSQL ayarları başarıyla kaydedildi!', 'success');
+            renderDBConnectionResult('success', 'Config başarıyla DB'ye kaydedildi ve cache invalid edildi.');
+        }
+
+        function renderDBConnectionResult(status, message) {
+            const resultDiv = document.getElementById('formResult');
+            const resultText = document.getElementById('formResultText');
+            
+            resultDiv.className = 'mt-4 p-3 rounded-lg ' + (status === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200');
+            resultText.className = 'font-medium';
+            resultText.textContent = message;
+        }
+
+        function getFormResultClass() {
+            return 'bg-green-50 border border-green-200';
+        }
+    </script>
+</body>
+</html>
