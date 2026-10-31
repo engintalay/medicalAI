@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+psycopg2-binary
+redis
+python-dotenv
+pydantic # Genellikle FastAPI ile birlikte kullanılır, ekleyelim
+sentence-transformers # RAG için gerekecek
