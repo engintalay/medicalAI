@@ -36,17 +36,66 @@ chmod +x run.sh restart.sh stop.sh
 
 echo "✅ Tüm script'ler çalıştırılabilir olarak ayarlandı."
 
-# 4. Doğrulama Testi
-echo "[STEP 4/4] Temel bağımlılık doğrulama testleri çalıştırılıyor..."
+# 4. Yeni Script Dosyaları Oluşturma (Eğer yoksa)
+echo "[STEP 4/4] Script dosyaları oluşturuluyor..."
+
+# run.sh kontrolü
+if [ ! -f "run.sh" ]; then
+    cat > run.sh << 'RUNEOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+echo "--- 🚀 Medical AI Uygulaması Başlatılıyor ---"
+[ ! -d "venv" ] && python3 -m venv venv
+source venv/bin/activate
+uvicorn app:app --host 0.0.0.0 --port 8000
+RUNEOF
+    chmod +x run.sh
+    echo "✅ run.sh oluşturuldu."
+fi
+
+# stop.sh kontrolü
+if [ ! -f "stop.sh" ]; then
+    cat > stop.sh << 'STOPEOF'
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PID_FILE="$SCRIPT_DIR/venv/pidfile"
+if [ -f "$PID_FILE" ]; then
+    kill $(cat "$PID_FILE")
+    rm "$PID_FILE"
+else
+    pkill -f "uvicorn.*app:app"
+fi
+STOPEOF
+    chmod +x stop.sh
+    echo "✅ stop.sh oluşturuldu."
+fi
+
+# restart.sh kontrolü
+if [ ! -f "restart.sh" ]; then
+    cat > restart.sh << 'RESTARTEOF'
+#!/bin/bash
+bash stop.sh && bash run.sh
+RESTARTEOF
+    chmod +x restart.sh
+    echo "✅ restart.sh oluşturuldu."
+fi
+
+echo "✅ Tüm script dosyaları hazır."
+
+# 5. Doğrulama Testi
+echo "[STEP 5/4] Temel bağımlılık doğrulama testleri çalıştırılıyor..."
 # FastAPI'yi basit bir şekilde import edip kontrol ediyoruz
 python -c "import fastapi; print('✅ FastAPI başarıyla import edildi.')"
 # Redis'i basitçe kontrol ediyoruz (genellikle Redis'in localde/config'de olması gerekir)
 python -c "import redis; try: r = redis.Redis(decode_responses=True); r.ping(); print('✅ Redis başarıyla ping atıldı (Bağlantı kontrolü OK).') except Exception as e: print(f'⚠️ Redis ping atıldı ancak bir hata oluştu: {e}')"
 
-echo "==============================================="
+echo ""
+echo "============================================="
 echo "🎉 KURULUM TAMAMLANDI! 🎉"
 echo "Ortamınız hazır. Şimdi kullanabilirsiniz:"
-echo "  - `./run.sh` (Uygulamayı başlatmak için)"
-echo "  - `./install.sh` (Tekrar kurmak için)"
-echo "  - `./stop.sh` (Uygulamayı durdurmak için)"
-echo "==============================================="
+echo "  - ./run.sh (Uygulamayı başlatmak için)"
+echo "  - ./restart.sh (Yeniden başlatmak için)"
+echo "  - ./stop.sh (Durdurmak için)"
+echo "  - ./install.sh (Tekrar kurmak için)"
+echo "============================================="
