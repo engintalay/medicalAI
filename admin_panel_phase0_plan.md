@@ -78,24 +78,24 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 ---
 
 ## 📊 Faz 0 İlerleme Tablosu
-| Basamak | Açıklama | Durum |
-|---------|----------|-------|
-| 1 | Ortam & Bağımlılıklar | ✅ TAMAMLANDI |
-| 2 | system\_config Tablosu + Seed | ✅ TAMAMLANDI |
-| 3 | Config Loader + Cache + Hot Reload | ✅ TAMAMLANDI |
-| 4 | Admin Authentication (Login + JWT) | ✅ TAMAMLANDI |
-| 5 | Admin Panel Routes (API) | ✅ TAMAMLANDI |
-| 6 | HTML Admin Arayüzü (Templates) | ⬜ Yapılacak |
-| 7 | PostgreSQL Ayarları Endpoint & UI | ⬜ Yapılacak |
-| 8 | Kullanıcı Yönetimi + Script'ler | ⬜ Yapılacak |
+| Basamak | Açıklama | Durum | Dosya |
+|---------|----------|-------|-------|
+| 1 | Ortam & Bağımlılıklar | ✅ TAMAMLANDI | `requirements.txt`, `install.sh` |
+| 2 | system\_config Tablosu + Seed | ✅ TAMAMLANDI | `database/schema.sql` |
+| 3 | Config Loader + Cache + Hot Reload | ✅ TAMAMLANDI | `config/loader.py` |
+| 4 | Admin Authentication (Login + JWT) | ✅ TAMAMLANDI | `config/auth_service.py` |
+| 5 | Admin Panel Routes (API) | ✅ TAMAMLANDI | `routes/admin.py` |
+| 6 | HTML Admin Arayüzü (Templates) | ✅ TAMAMLANDI | `templates/admin.html`, `static/` |
+| 7 | PostgreSQL Ayarları Endpoint & UI | ⬜ **Sıradaki!** | `admin.html` (config view) |
+| 8 | Kullanıcı Yönetimi + Script'ler | ⬜ Yapılacak | - |
 
 ---
 
 ## 📌 Sonraki Adımlar
 
 **Konfigürasyon Hiyerarşisi**: ENV > .env > system_config (Yeni Mimari ile Güncellendi)
-**Tamamlanan**: Basamak 1, 2, 3, 4, 5 ✅
+**Tamamlanan**: Basamak 1, 2, 3, 4, 5, 6 ✅
 
-Şimdi **Basamak 6: HTML Admin Arayüzü** ile devam edebiliriz. Bu aşamada web arayüzünü (Jinja2 templates) oluşturacağız.
+Şimdi **Basamak 7: PostgreSQL Ayarları Endpoint & UI** ile devam edebiliriz. Bu aşamada DB ayarları formunu HTML/JS olarak ekleyeceğiz.
 
-**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 6: HTML Admin Arayüzü**)
+**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 7: PostgreSQL Ayarları**)
