@@ -12,7 +12,10 @@
 - **Backend**: Python 3.10+ FastAPI
 - **Veritabanı**: PostgreSQL (remote/uzak erişim, psycopg2-binary)
 - **Cache**: Redis (remote/uzak erişim)
-- **Konfigürasyon**: Tüm servis bağlantıları `system_config` tablosundan yönetilir. `.env` dosyası kullanılmaz.
+- **Konfigürasyon Hiyerarşisi (YENİ)**: ENV (En Yüksek) > .env > system_config tablosu (En Düşük)
+- **Bağımsızlık**: DB/Redis bağlantıları artık uygulama tarafından değil, altyapı tarafından (ENV ile) sağlanır.
+- **Admin Rolü**: Admin, altyapı (DB Host/Port) ayarlarını *yönetmek* yerine, *uygulama* ayarlarını (LLM Key, RAG Top K vb.) yönetir.
+- **Init Süreci**: DB bağlantı ayarları (Host, Port) artık **install.sh** çalıştırıldığında otomatik olarak okunur ve DB'ye ilk defa yazılır (Seed).
 
 ### 1.2. Kod Stili (PEP 8)
 - Python 3.10+ PEP 8 standartlarına uygun kod yazın
@@ -87,20 +90,23 @@ medical_ai/
 - Migration script'leri version kontrollü (migration_001_*.sql)
 
 ### 3.2. Config-Based Connection (YENİ - Faz 0)
-- **Yeni yaklaşım**: Veritabanı bağlantısı `system_config` tablosundan yönetilir
-- Uygulama başlarken config'i okur (Redis cache ile)
-- Admin panel üzerinden config güncellenir (hot reload ile)
-- **ASLA** `.env` file'ı kullanmayın - tüm bağlantılar config üzerinden
-- Admin panel ilk yapılacak faz (Faz 0)
+- **Yeni yaklaşım**: Veritabanı bağlantısı **system_config** tablosundan yönetilir.
+- **Öncelik**: DB/Redis bağlantıları **ENV** > **.env** > **system_config** ile okunur.
+- **Uygulama başlarken config'i okur** (Redis cache ile)
+- **Admin panel üzerinden config güncellenir** (hot reload ile)
+- **ASLA** `.env` file'ı kullanmayın - tüm bağlantılar config üzerinden.
+- **Admin panel ilk yapılacak faz** (Faz 0).
 
 ### 3.3. system_config Tablosu Key'leri
-- `db_host`, `db_port`, `db_name`, `db_user`, `db_password` - PostgreSQL
-- `redis_host`, `redis_port` - Redis
-- `llm_api_key`, `llm_endpoint` - Main LLM
-- `embedding_model`, `vector_size` - Embedding
-- `rag_top_k` - RAG sonuc sayısı
-- `upload_dir` - Dosya yükleme dizini
-- `admin_default_password` - Varsayılan admin şifresi
+- **PostgreSQL**: `db_host`, `db_port`, `db_name`, `db_user`, `db_password`
+- **Redis**: `redis_host`, `redis_port`
+- **Main LLM**: `llm_api_key`, `llm_endpoint`
+- **Embedding**: `embedding_model`, `vector_size`
+- **RAG**: `rag_top_k`
+- **Upload**: `upload_dir`
+- **Admin**: `admin_default_password`
+
+**Not**: Bu key'ler **ENV > .env > system_config** hiyerarşisi ile okunur.
 
 ### 3.2. Veri Tipi Standartları
 - Integer ID'ler: `SERIAL PRIMARY KEY`
@@ -236,9 +242,10 @@ cur.execute(f"SELECT * FROM users WHERE email = {email}")
 - Backup schedule: günlük
 
 ### 8.3. Configuration
-- `.env` dosyası git'e EKLİNMEZ
-- `.gitignore` içine ekleyin
-- Environment variables kullanın
+- **Öncelik**: **ENV** > **.env** > **system_config**
+- **`.env` dosyası git'e EKLİNMEZ**
+- **`.gitignore` içine ekleyin**
+- **Environment variables kullanın**
 
 ---
 
@@ -291,6 +298,7 @@ cur.execute(f"SELECT * FROM users WHERE email = {email}")
 | Veri Güvenliği | Password hashing, parametrik sorgular |
 | Medical Safety | Hiç tıbbi tavsiye, disclaimer |
 | **Git Commit** | **Her kod değişikliği için ZORUNLU** |
+| **Konfigürasyon** | **ENV > .env > system_config** |
 
 ---
 

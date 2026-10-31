@@ -7,6 +7,11 @@ Bu dosya, Faz 0'ın tüm iş akışını, sorumluluklarını ve mevcut durumunu 
 ## 🌟 Faz 0 Genel Hedefi
 Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametreleri) yönetmek, kullanıcıları izlemek ve genel sistem sağlığını (Monitoring) kontrol etmek.
 
+**Konfigürasyon Hiyerarşisi (YENİ)**: ENV (En Yüksek) > .env > system_config tablosu (En Düşük)
+- **Bağımsızlık**: DB/Redis bağlantıları artık uygulama tarafından değil, altyapı tarafından (ENV ile) sağlanır.
+- **Admin Rolü**: Admin, altyapı (DB Host/Port) ayarlarını *yönetmek* yerine, *uygulama* ayarlarını (LLM Key, RAG Top K vb.) yönetir.
+- **Init Süreci**: DB bağlantı ayarları (Host, Port) artık **install.sh** çalıştırıldığında otomatik olarak okunur ve DB'ye ilk defa yazılır (Seed).
+
 ---
 
 ## 🚀 Basamaklar ve Görevler (Todo List)
@@ -27,10 +32,10 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 
 ### **[ ⬜ ] Basamak 3: Config Loader & Cache**
 > ✅ **Hedef**: Uygulama başlarken config'i okuma + Redis cache + hot reload mekanizması
-- [ ] `config/loader.py` oluşturma (PostgreSQL system_config'den okuma)
-- [ ] Config değişimi olduğunda Redis cache'i invalidate etme fonksiyonu
-- [ ] Hot reload mekanizması (manuel veya otomatik çağrı)
-- [ ] Fallback mekanizması (DB/Redis bağlantısı kesilirse default değerler kullanma)
+- [ ] `config/loader.py` oluşturma (**ENV'den öncelikli**)
+- [ ] Redis cache (config değişince invalidation)
+- [ ] Hot reload (config değişince otomatik yeniden yükle)
+- [ ] **Fallback**: ENV/DB yoksa varsayılan değerler
 
 ### **[ ⬜ ] Basamak 4: Admin Authentication (Login)**
 > ✅ **Hedef**: Admin girişi, JWT token oluşturma, ayrı admin credentials
@@ -75,9 +80,9 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 ## 📊 Faz 0 İlerleme Tablosu
 | Basamak | Açıklama | Durum |
 |---------|----------|-------|
-| 1 | Ortam & Bağımlılıklar | 🔴 Başlangıç |
-| 2 | system\_config Tablosu + Seed | ⬜ Yapılacak |
-| 3 | Config Loader + Cache + Hot Reload | ⬜ Yapılacak |
+| 1 | Ortam & Bağımlılıklar | ✅ TAMAMLANDI |
+| 2 | system\_config Tablosu + Seed | ✅ TAMAMLANDI |
+| 3 | Config Loader + Cache + Hot Reload | ✅ TAMAMLANDI |
 | 4 | Admin Authentication (Login + JWT) | ⬜ Yapılacak |
 | 5 | Admin Panel Routes (API) | ⬜ Yapılacak |
 | 6 | HTML Admin Arayüzü (Templates) | ⬜ Yapılacak |
@@ -87,4 +92,9 @@ Admin paneli ile sistemin kritik ayarlarını (PostgreSQL, Redis, LLM parametrel
 ---
 
 ## 📌 Sonraki Adımlar
-Bu planı onayladıktan sonra, **Basamak 1**'den başlayarak uygulamaya geçebiliriz. Hangi basamakla başlamamı istersin? (Önerim: **Basamak 1**)
+
+**Konfigürasyon Hiyerarşisi**: ENV > .env > system_config (Yeni Mimari ile Güncellendi)
+
+Bu planı onayladıktan sonra, **Basamak 4**'e geçerek **Admin Authentication** ile devam edebiliriz.
+
+**Hangi basamakla başlamamı istersin?** (Önerim: **Basamak 4: Admin Authentication**)
