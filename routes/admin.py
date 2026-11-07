@@ -42,7 +42,14 @@ async def admin_login(request: Request):
     Returns:
         JWT token ve kullanıcı bilgileri
     """
-    data = request.form if hasattr(request, 'form') else request.json()
+    # Frontend gonderi JSON; form verisi icin de destekle.
+    # (Request.json / Request.form async metotlerdir -> await gerektirir)
+    try:
+        data = await request.json()
+    except Exception:
+        data = await request.form()
+    if not isinstance(data, dict):
+        data = {}
     email = data.get('email', '')
     password = data.get('password', '')
     
