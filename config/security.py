@@ -82,22 +82,17 @@ class JWTAuthMiddleware:
     async def handle_request(self, request: Request, receive, send):
         # Token'ı al (Header'dan)
         auth_header = request.headers.get('Authorization', '')
-        
+
         if not auth_header.startswith('Bearer '):
             from fastapi.responses import JSONResponse
             await send(
-                (
-                    (status_code: int, content_type: str, headers: Dict, body: bytes)
-                ) -> None:
-                    await send(
-                        (401, 'application/json', {}, 
-                         JSONResponse(content={'success': False, 'error': 'Geçersiz Authorization Header'}).body)
-                    )
+                (401, 'application/json', {},
+                 JSONResponse(content={'success': False, 'error': 'Geçersiz Authorization Header'}).body)
             )
             return
-        
+
         token = auth_header[7:]
-        
+
         # Admin endpointleri için admin token kontrolü
         if request.url.path.startswith('/admin/api/'):
             secret_key = self._config.get('jwt_secret', 'medical_ai_default_secret_2026')
@@ -129,7 +124,7 @@ class JWTAuthMiddleware:
         
         # Token başarılı, devam et
         await receive()
-        await send
+        return
 
 
 # Decorator-based Auth

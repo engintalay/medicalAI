@@ -1,15 +1,27 @@
 # routes/admin.py
 
 import psycopg2
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from config.loader import get_config_loader
 from config.auth_service import auth_service
-from config.security import SecurityMiddleware, require_jwt, JSONResponse
+from config.security import SecurityMiddleware, require_jwt
+from models.health import HealthMetricCreate, HealthMetricUpdate, HealthMetricResponse, format_metric_response, format_metric_list
+from routines.health import (
+    create_health_metric,
+    get_health_metrics,
+    get_health_metric_by_id,
+    update_health_metric,
+    delete_health_metric,
+    get_health_stats
+)
 
 # Router
 admin_router = APIRouter(prefix="/admin/api", tags=["Admin"])
+
+# HealthMetrics Router
+health_router = APIRouter(prefix="/admin/api/health", tags=["Health Metrics"])
 
 # Config Loader
 _config = get_config_loader()
@@ -316,6 +328,167 @@ async def get_monitoring(request: Request):
             }
         }
     })
+
+# --- 6. HEALTH METRICS ENDPOINTS ---
+
+def _get_conn():
+    """Yeni bir PostgreSQL bağlantısı açar (config loader'dan okunan ayarlar)."""
+    return psycopg2.connect(
+        host=_config.get('db_host', 'localhost'),
+        port=int(_config.get('db_port', '5432')),
+        dbname=_config.get('db_name', 'medical_ai'),
+        user=_config.get('db_user', 'medical_user'),
+    )
+
+
+@health_router.post("/metrics", summary="Health Metric Ekle")
+async def create_health_metric_endpoint(
+    request: Request,
+    user_id: int,
+    metrics: HealthMetricCreate = Body(...),
+):
+    """Yeni bir sağlık metrik kaydı ekler.
+
+    Query: user_id (kaydı hangi kullanıcıya bağlayacağını belirtir)
+    Body: {metric_name, value, unit, recorded_at?}
+    """
+    try:
+        conn = _get_conn()
+        try:
+            value = float(metrics.value)
+            created_id = create_health_metric(
+                conn, user_id, metrics.metric_name, value,
+                metrics.unit, metrics.recorded_at
+            )
+            metric = get_health_metric_by_id(conn, created_id, user_id)
+            return JSONResponse(status_code=201, content={'success': True, 'data': metric})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
+
+@health_router.get("/metrics", summary="Health Metric Listele")
+async def list_health_metrics(
+    request: Request,
+    user_id: int,
+    metric_name: str = None,
+    page: int = 1,
+    limit: int = 50,
+):
+    """Kullanıcının sağlık metriklerini listeler (sayfalı).
+
+    Query: user_id, metric_name?, page, limit
+    """
+    try:
+        conn = _get_conn()
+        try:
+            metrics, total = get_health_metrics(
+                conn, user_id, metric_name,
+                limit=int(limit), offset=(page - 1) * int(limit)
+            )
+            return JSONResponse(status_code=200, content={
+                'success': True,
+                'data': format_metric_list(metrics),
+                'pagination': {
+                    'page': page,
+                    'per_page': limit,
+                    'total': total,
+                    'total_pages': (total + limit - 1) // limit if limit else 0,
+                },
+            })
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
+
+@health_router.get("/metrics/{metric_id}", summary="Health Metric Getir")
+async def get_health_metric_endpoint(
+    request: Request,
+    metric_id: int,
+    user_id: int,
+):
+    """Tek bir sağlık metrikini getirir (kullanıcı sahiplik kontrolü)."""
+    try:
+        conn = _get_conn()
+        try:
+            metric = get_health_metric_by_id(conn, metric_id, user_id)
+            if not metric:
+                return JSONResponse(status_code=404, content={'success': False, 'error': f'metric_id {metric_id} bulunamadı'})
+            return JSONResponse(status_code=200, content={'success': True, 'data': metric})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
+
+@health_router.put("/metrics/{metric_id}", summary="Health Metric Güncelle")
+async def update_health_metric_endpoint(
+    request: Request,
+    metric_id: int,
+    user_id: int,
+    metrics: HealthMetricUpdate = Body(...),
+):
+    """Mevcut bir sağlık metrikini günceller (kullanıcı sahiplik kontrolü)."""
+    try:
+        conn = _get_conn()
+        try:
+            updated = update_health_metric(
+                conn, metric_id, user_id,
+                metrics.metric_name, metrics.value, metrics.unit, metrics.recorded_at
+            )
+            if not updated:
+                return JSONResponse(status_code=404, content={'success': False, 'error': f'metric_id {metric_id} bulunamadı'})
+            metric = get_health_metric_by_id(conn, metric_id, user_id)
+            return JSONResponse(status_code=200, content={'success': True, 'data': metric})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
+
+@health_router.delete("/metrics/{metric_id}", summary="Health Metric Sil")
+async def delete_health_metric_endpoint(
+    request: Request,
+    metric_id: int,
+    user_id: int,
+):
+    """Bir sağlık metrikini siler (kullanıcı sahiplik kontrolü)."""
+    try:
+        conn = _get_conn()
+        try:
+            deleted = delete_health_metric(conn, metric_id, user_id)
+            if not deleted:
+                return JSONResponse(status_code=404, content={'success': False, 'error': f'metric_id {metric_id} bulunamadı'})
+            return JSONResponse(status_code=200, content={'success': True, 'message': f'metric_id {metric_id} silindi'})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
+
+@health_router.get("/stats", summary="Health İstatistikleri")
+async def health_stats_endpoint(
+    request: Request,
+    user_id: int,
+    metric_name: str = None,
+    days: int = 30,
+):
+    """Kullanıcının sağlık metrik istatistiklerini getirir.
+
+    Query: user_id, metric_name?, days (varsayılan 30)
+    """
+    try:
+        conn = _get_conn()
+        try:
+            stats = get_health_stats(conn, user_id, metric_name, int(days))
+            return JSONResponse(status_code=200, content={'success': True, 'data': stats})
+        finally:
+            conn.close()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
+
 
 # --- 5. UTILS ENDPOINTS ---
 
