@@ -373,7 +373,6 @@
             '<a class="btn btn-secondary" href="/admin/config" data-path="/admin/config">⚙️ Config</a>' +
             '<a class="btn btn-secondary" href="/admin/llm" data-path="/admin/llm">🧠 LLM Ayarları</a>' +
             '<a class="btn btn-secondary" href="/admin/users" data-path="/admin/users">👥 Kullanıcılar</a>' +
-            '<a class="btn btn-secondary" href="/admin/health" data-path="/admin/health">❤️ Sağlık Metrikleri</a>' +
             '<a class="btn btn-secondary" href="/admin/db-config" data-path="/admin/db-config">🗄️ Veritabanı</a>' +
             '</div>' +
             '<div class="card-note">Config ve veritabanı ayarlarını buradan yönetebilirsiniz.</div>' +
