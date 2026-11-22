@@ -82,7 +82,8 @@ class ConfigLoader:
             "rag_top_k": os.getenv("RAG_TOP_K", "5"),
             "rag_chunk_size": os.getenv("RAG_CHUNK_SIZE", "500"),
             "rag_overlap": os.getenv("RAG_OVERLAP", "100"),
-            "upload_dir": os.getenv("UPLOAD_DIR", "/uploads"),
+            "upload_dir": os.getenv("UPLOAD_DIR", "uploads"),
+            "max_upload_mb": os.getenv("MAX_UPLOAD_MB", "20"),
             "admin_default_password": os.getenv("ADMIN_DEFAULT_PASSWORD", "changeme123"),
         }
         for key, value in env_config.items():

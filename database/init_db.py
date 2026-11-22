@@ -76,6 +76,9 @@ def main() -> int:
         );
     """)
 
+    # --- Upload alanları (mevcut DB'ler için idempotent migration) ---
+    cur.execute("ALTER TABLE user_uploads ADD COLUMN IF NOT EXISTS stored_name VARCHAR(255);")
+
     # --- Profil alanları (mevcut DB'ler için idempotent migration) ---
     for column, column_type in (
         ("height_cm", "NUMERIC(5,2)"),
@@ -145,6 +148,9 @@ def main() -> int:
         )
 
     # --- system_config seed (.env'deki gerçek değerlerle) ---
+    # DİKKAT: admin panelinden kaydedilen ayarlar (LLM base URL, API key,
+    # model vb.) asla .env varsayılanlarıyla üzerine yazılmamalı. Bu yüzden
+    # mevcut key'ler DO NOTHING ile korunur; sadece eksik key'ler eklenir.
     seeds = [
         ("db_host", DB["host"], "PostgreSQL host"),
         ("db_port", str(DB["port"]), "PostgreSQL port"),
@@ -168,7 +174,8 @@ def main() -> int:
         ("rag_top_k", os.getenv("RAG_TOP_K", "5"), "RAG sonuç sayısı"),
         ("rag_chunk_size", os.getenv("RAG_CHUNK_SIZE", "500"), "RAG chunk boyutu"),
         ("rag_overlap", os.getenv("RAG_OVERLAP", "100"), "RAG chunk overlap"),
-        ("upload_dir", os.getenv("UPLOAD_DIR", "/uploads"), "Dosya yükleme dizini"),
+        ("upload_dir", os.getenv("UPLOAD_DIR", "uploads"), "Dosya yükleme dizini"),
+        ("max_upload_mb", os.getenv("MAX_UPLOAD_MB", "20"), "Tek dosya boyut sınırı (MB)"),
         ("admin_default_password", os.getenv("ADMIN_DEFAULT_PASSWORD", "changeme123"), "Varsayılan admin şifresi"),
         ("jwt_secret", os.getenv("JWT_SECRET", "medical_ai_default_secret_2026"), "JWT imza anahtarı"),
     ]
@@ -177,10 +184,7 @@ def main() -> int:
             """
             INSERT INTO system_config (key, value, description)
             VALUES (%s, %s, %s)
-            ON CONFLICT (key) DO UPDATE
-              SET value = EXCLUDED.value,
-                  description = EXCLUDED.description,
-                  updated_at = NOW();
+            ON CONFLICT (key) DO NOTHING;
             """,
             (key, value, desc),
         )

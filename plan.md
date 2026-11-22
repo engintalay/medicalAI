@@ -86,6 +86,45 @@
 - MinIO self-hosted storage (eğer gerekecekse)
 - Advanced medical NLP modülleri
 
+## 14. Son Geliştirmeler (Uygulama Kararları)
+
+Bu bölüm, kodlama sırasında ortaya çıkan ve orijinal planı tamamlayan kararları kaydeder. Kaynak ayrıntılar
+`/home/engintalay/.opencode/plan/medicalai/` altındaki bağımsız parçalardadır.
+
+### 14.1 Config kalıcılığı (LLM ayarlarının silinmesi sorunu)
+- `database/init_db.py` seed'i `ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value` kullanıyordu.
+  Her migration çalıştırmasında admin panelinden kaydedilen LLM/vision/değerler `.env`'deki boş
+  varsayılanlarla eziliyordu.
+- **Karar:** Seed `ON CONFLICT (key) DO NOTHING` kullanır. Yalnızca eksik anahtarlar eklenir;
+  mevcut hiçbir config değeri migration ile değiştirilmez.
+- `.env`, DB erişilemediğinde uygulama tarafında *fallback* olarak kalır; yazıcı kaynak değildir.
+- Admin panelinden kaydedilen gizli değerler API'de maskelenir ve UI'da boş gösterilir; boş bırakıldığında
+  mevcut değer korunur. Arayüzde "Kayıtlı değer var (güvenlik için gösterilmez)" bilgisi gösterilir.
+
+### 14.2 Dosya depolama (04) — tamamlandı
+- `routes/uploads.py`: `POST /api/uploads` (+ `/api/upload` alias), `GET /api/uploads`,
+  `DELETE /api/uploads/{id}`; MIME/uzantı doğrulama, boyut sınırı (413), UUID isim, `user_id` JWT'den.
+- `max_upload_mb` config'i eklendi; `upload_dir` yazılamıyorsa proje içi `uploads/`'a düşülür.
+- Başkasının dosyası listelenemez/silemez (404); silme DB kaydı + fiziksel dosyayı birlikte kaldırır.
+
+### 14.3 Admin — kullanıcı bazlı disk kullanım istatistikleri (yeni)
+Amaç: yöneticinin dosya depolamayı kullanıcı bazında izlemesi; sağlık metrikleri admin linkinden
+kaldırıldığı için depolama tarafının görünürlüğü bu ekranla sağlanır.
+
+- **Endpoint:** `GET /admin/api/uploads/stats` (JWT + `role=admin`).
+- **Sayfa:** `/admin/storage` — sidebar'da "💾 Disk Kullanımı".
+- **Gösterilecekler:**
+  - Özet kartları: toplam dosya, toplam disk kullanımı, dosya yükleyen kullanıcı sayısı, ort. dosya boyutu.
+  - Kullanıcı bazlı tablo: e-posta/ad, dosya sayısı, toplam boyut, son yükleme, MIME türü dağılımı.
+  - MIME türü bazlı dağılım (PDF / görsel / metin) ve son yüklemeler.
+- **Kaynak:** `user_uploads` + `users` (LEFT JOIN); `size_bytes` toplamları, `upload_date` son yükleme.
+- **Gizlilik:** yalnızca istatistik; dosya içeriği ve fiziksel yol admin ekranında gösterilmez.
+
+### 14.4 İzleme
+- Dashboard'daki LLM durumu `llm_api_key` varlığına göre `configured` hesaplar; gizli anahtar maskeli
+  döndüğü için alan boş görünür ama değer korunur. Sağlık metrikleri admin menüsünden geçici olarak
+  kaldırıldı; kod ve `/admin/api/health/*` endpoint'leri korundu (08 parçasına taşınacak).
+
 ---
 
 **Plan onaylandıktan sonra kodlama başlayacaktır.**

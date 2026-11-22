@@ -64,6 +64,20 @@
         });
     }
 
+    function formatBytes(value) {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes < 0) return '—';
+        if (bytes < 1024) return formatNumber(bytes) + ' B';
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let size = bytes / 1024;
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit += 1;
+        }
+        return formatNumber(size, size < 10 ? 2 : 1) + ' ' + units[unit];
+    }
+
     function formatPercent(value) {
         if (value === null || value === undefined || value === '') return '0%';
         const number = Number(value);
@@ -186,6 +200,7 @@
         '/admin/config': { key: 'config', title: 'Sistem Config', render: renderConfig },
         '/admin/llm': { key: 'llm', title: 'LLM Ayarları', render: renderLlmSettings },
         '/admin/users': { key: 'users', title: 'Kullanıcılar', render: renderUsersPage },
+        '/admin/storage': { key: 'storage', title: 'Disk Kullanımı', render: renderStorage },
         '/admin/health': { key: 'health', title: 'Sağlık Metrikleri', render: renderHealth },
         '/admin/db-config': { key: 'db-config', title: 'Veritabanı Ayarları', render: renderDbConfig }
     };
@@ -373,6 +388,7 @@
             '<a class="btn btn-secondary" href="/admin/config" data-path="/admin/config">⚙️ Config</a>' +
             '<a class="btn btn-secondary" href="/admin/llm" data-path="/admin/llm">🧠 LLM Ayarları</a>' +
             '<a class="btn btn-secondary" href="/admin/users" data-path="/admin/users">👥 Kullanıcılar</a>' +
+            '<a class="btn btn-secondary" href="/admin/storage" data-path="/admin/storage">💾 Disk Kullanımı</a>' +
             '<a class="btn btn-secondary" href="/admin/db-config" data-path="/admin/db-config">🗄️ Veritabanı</a>' +
             '</div>' +
             '<div class="card-note">Config ve veritabanı ayarlarını buradan yönetebilirsiniz.</div>' +
@@ -633,6 +649,108 @@
             '<div class="table-foot">Toplam ' + formatNumber(total) + ' kullanıcı · Sayfa ' +
             esc(current) + ' / ' + esc(totalPages) + '</div>' +
             paginationHTML;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Disk Kullanımı (kullanıcı bazlı)                                  */
+    /* ------------------------------------------------------------------ */
+
+    const STORAGE_TYPE_LABELS = {
+        pdf: 'PDF', image: 'Görseller', text: 'Metin', other: 'Diğer'
+    };
+
+    async function renderStorage() {
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Disk Kullanımı</h2>' +
+            '<p class="page-sub">Yüklenen dosyaların kullanıcı bazında disk kullanımı.</p></div>' +
+            '<div class="table-wrap"><div class="empty">İstatistikler yükleniyor...</div></div>';
+
+        try {
+            const response = await api('/uploads/stats');
+            const data = response.data || {};
+            const summary = data.summary || {};
+            const byType = data.by_type || [];
+            const byUser = data.by_user || [];
+            const recent = data.recent || [];
+            const totalBytes = Number(summary.total_bytes) || 0;
+
+            const typeRows = byType.length
+                ? byType.map(function (item) {
+                    const pct = totalBytes ? (Number(item.bytes) / totalBytes) * 100 : 0;
+                    const label = STORAGE_TYPE_LABELS[item.type] || item.type;
+                    return resourceRow(label + ' · ' + formatNumber(item.count) + ' dosya',
+                        pct, formatBytes(item.bytes));
+                }).join('')
+                : '<div class="empty">Henüz dosya yok.</div>';
+
+            const userRows = byUser.length
+                ? byUser.map(function (user) {
+                    const types = user.types || {};
+                    const share = totalBytes
+                        ? (Number(user.total_bytes) / totalBytes) * 100 : 0;
+                    const breakdown = [
+                        ['PDF', types.pdf], ['Görsel', types.image],
+                        ['Metin', types.text], ['Diğer', types.other]
+                    ].filter(function (pair) { return Number(pair[1]) > 0; })
+                     .map(function (pair) { return pair[0] + ': ' + pair[1]; }).join(' · ') || '—';
+                    return '<tr>' +
+                        '<td>' + esc(user.full_name || '—') + '<div class="hint">' + esc(user.email) + '</div></td>' +
+                        '<td class="mono">' + esc(user.user_id) + '</td>' +
+                        '<td>' + formatNumber(user.file_count) + '</td>' +
+                        '<td>' + formatBytes(user.total_bytes) + '</td>' +
+                        '<td>' + formatNumber(share, 1) + '%</td>' +
+                        '<td>' + esc(breakdown) + '</td>' +
+                        '<td>' + formatDateTime(user.last_upload) + '</td>' +
+                        '</tr>';
+                }).join('')
+                : '<tr><td colspan="7" class="empty">Henüz dosya yükleyen kullanıcı yok.</td></tr>';
+
+            const recentRows = recent.length
+                ? recent.map(function (item) {
+                    return '<tr>' +
+                        '<td>' + esc(item.full_name || '—') + '<div class="hint">' + esc(item.email) + '</div></td>' +
+                        '<td>' + esc(item.filename) + '</td>' +
+                        '<td>' + formatBytes(item.size) + '</td>' +
+                        '<td>' + formatDateTime(item.uploaded_at) + '</td>' +
+                        '</tr>';
+                }).join('')
+                : '<tr><td colspan="4" class="empty">Son yükleme yok.</td></tr>';
+
+            contentArea.innerHTML =
+                '<div class="page-head">' +
+                '<h2 class="page-title">Disk Kullanımı</h2>' +
+                '<p class="page-sub">Yüklenen dosyaların kullanıcı bazında disk kullanımı. ' +
+                'Dosya içerikleri gösterilmez.</p>' +
+                '</div>' +
+                '<div class="stats-grid">' +
+                statCard('📁', '', formatNumber(summary.total_files || 0), 'Toplam dosya') +
+                statCard('💾', 'green', formatBytes(summary.total_bytes || 0), 'Toplam disk kullanımı') +
+                statCard('👥', 'amber', formatNumber(summary.users_with_uploads || 0), 'Dosya yükleyen kullanıcı') +
+                statCard('📊', 'red', formatBytes(summary.avg_bytes || 0), 'Ortalama dosya boyutu') +
+                '</div>' +
+                '<div class="cards-grid">' +
+                '<div class="card"><div class="card-head"><div class="card-title">Tür Dağılımı</div></div>' +
+                typeRows + '</div>' +
+                '<div class="card"><div class="card-head"><div class="card-title">Son Yüklemeler</div></div>' +
+                '<div class="table-wrap"><table class="table">' +
+                '<thead><tr><th>Kullanıcı</th><th>Dosya</th><th>Boyut</th><th>Tarih</th></tr></thead>' +
+                '<tbody>' + recentRows + '</tbody></table></div></div>' +
+                '</div>' +
+                '<div class="section-head"><h3 class="section-title">Kullanıcı Bazlı Kullanım</h3></div>' +
+                '<div class="table-wrap"><table class="table">' +
+                '<thead><tr><th>Kullanıcı</th><th>ID</th><th>Dosya</th><th>Toplam Boyut</th>' +
+                '<th>Pay</th><th>Türler</th><th>Son Yükleme</th></tr></thead>' +
+                '<tbody>' + userRows + '</tbody></table></div>' +
+                '<div class="table-foot">Toplam ' + formatNumber(summary.total_files || 0) +
+                ' dosya · ' + formatBytes(summary.total_bytes || 0) + '</div>';
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            contentArea.innerHTML =
+                '<div class="page-head"><h2 class="page-title">Disk Kullanımı</h2></div>' +
+                '<div class="table-wrap"><div class="empty">İstatistikler yüklenemedi: ' +
+                esc(error.message) + '</div></div>';
+        }
     }
 
     /* ------------------------------------------------------------------ */
@@ -923,14 +1041,18 @@
     function configInput(configs, key, label, type, hint, placeholder) {
         const config = configs.get(key) || {};
         const isSecret = !!config.is_secret || type === 'password';
+        const hasSavedSecret = isSecret && !!String(config.value || '').trim();
         const value = isSecret ? '' : (config.value === undefined || config.value === null ? '' : config.value);
+        const savedNote = hasSavedSecret
+            ? '<span class="hint">✅ Kayıtlı değer var (güvenlik için gösterilmez). Boş bırakırsanız korunur.</span>'
+            : '';
         return '<div class="field">' +
             '<label class="label" for="cfg-' + esc(key) + '">' + esc(label) + '</label>' +
             '<input class="input" id="cfg-' + esc(key) + '" type="' + esc(type) + '" ' +
             'data-config-key="' + esc(key) + '" data-secret="' + (isSecret ? 'true' : 'false') + '" ' +
             'value="' + esc(value) + '" ' +
-            'placeholder="' + esc(placeholder || (isSecret ? 'Değiştirmek için yeni değer girin' : '')) + '">' +
-            (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') +
+            'placeholder="' + esc(hasSavedSecret ? 'Değiştirmek için yeni değer girin' : (placeholder || '')) + '">' +
+            savedNote + (hint ? '<span class="hint">' + esc(hint) + '</span>' : '') +
             '</div>';
     }
 

@@ -250,7 +250,7 @@ async def update_config(request: Request, key: str, value: str = None):
         'llm_vision_supported', 'vision_llm_enabled',
         'vision_llm_provider', 'vision_llm_model', 'vision_llm_api_key', 'vision_llm_base_url',
         'embedding_model', 'rag_top_k', 'rag_chunk_size', 'rag_overlap',
-        'upload_dir', 'admin_default_password', 'jwt_secret',
+        'upload_dir', 'max_upload_mb', 'admin_default_password', 'jwt_secret',
     }
 
     if key not in valid_keys:
@@ -665,7 +665,7 @@ async def get_monitoring(request: Request):
         }
     })
 
-# --- 6. HEALTH METRICS ENDPOINTS ---
+# --- 5. HEALTH METRICS ENDPOINTS ---
 
 def _get_conn():
     """Yeni bir PostgreSQL bağlantısı açar (config loader'dan okunan ayarlar)."""
@@ -827,7 +827,133 @@ async def health_stats_endpoint(
         return JSONResponse(status_code=500, content={'success': False, 'error': str(e)})
 
 
-# --- 5. UTILS ENDPOINTS ---
+# --- 6. UPLOAD İSTATİSTİKLERİ ---
+
+@admin_router.get("/uploads/stats", summary="Kullanıcı Bazlı Disk Kullanım İstatistikleri")
+async def get_upload_stats(request: Request):
+    """Dosya depolama istatistiklerini kullanıcı bazında döner.
+
+    Yalnızca toplamlar ve dağılımlar döner; fiziksel dosya yolu/paylaşılmaz.
+    """
+    conn = None
+    cur = None
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(size_bytes), 0),
+                   COUNT(DISTINCT user_id),
+                   COALESCE(AVG(size_bytes), 0)
+            FROM user_uploads
+        """)
+        total_files, total_bytes, users_with_uploads, avg_bytes = cur.fetchone()
+
+        cur.execute("""
+            SELECT CASE
+                       WHEN mime_type = 'application/pdf' THEN 'pdf'
+                       WHEN mime_type LIKE 'image/%' THEN 'image'
+                       WHEN mime_type = 'text/plain' THEN 'text'
+                       ELSE 'other'
+                   END AS file_type,
+                   COUNT(*),
+                   COALESCE(SUM(size_bytes), 0)
+            FROM user_uploads
+            GROUP BY file_type
+            ORDER BY COUNT(*) DESC
+        """)
+        by_type = [
+            {'type': r[0], 'count': r[1], 'bytes': r[2]}
+            for r in cur.fetchall()
+        ]
+
+        cur.execute("""
+            SELECT user_id,
+                   COUNT(*) FILTER (WHERE mime_type = 'application/pdf') AS pdf,
+                   COUNT(*) FILTER (WHERE mime_type LIKE 'image/%') AS image,
+                   COUNT(*) FILTER (WHERE mime_type = 'text/plain') AS text,
+                   COUNT(*) FILTER (WHERE mime_type IS NULL
+                                      OR (mime_type <> 'application/pdf'
+                                          AND mime_type NOT LIKE 'image/%'
+                                          AND mime_type <> 'text/plain')) AS other
+            FROM user_uploads
+            GROUP BY user_id
+        """)
+        type_rows = cur.fetchall()
+
+        cur.execute("""
+            SELECT u.user_id, u.email, u.full_name,
+                   COUNT(up.upload_id) AS file_count,
+                   COALESCE(SUM(up.size_bytes), 0) AS total_bytes,
+                   MAX(up.upload_date) AS last_upload
+            FROM users u
+            LEFT JOIN user_uploads up ON up.user_id = u.user_id
+            GROUP BY u.user_id, u.email, u.full_name
+            HAVING COUNT(up.upload_id) > 0
+            ORDER BY total_bytes DESC, file_count DESC
+        """)
+        by_user = []
+        for user_id, email, full_name, file_count, user_bytes, last_upload in cur.fetchall():
+            types = next((r for r in type_rows if r[0] == user_id), None)
+            by_user.append({
+                'user_id': user_id,
+                'email': email,
+                'full_name': full_name,
+                'file_count': file_count,
+                'total_bytes': user_bytes,
+                'last_upload': last_upload,
+                'types': {
+                    'pdf': types[1] if types else 0,
+                    'image': types[2] if types else 0,
+                    'text': types[3] if types else 0,
+                    'other': types[4] if types else 0,
+                },
+            })
+
+        cur.execute("""
+            SELECT up.upload_id, u.email, u.full_name, up.original_name,
+                   up.size_bytes, up.upload_date
+            FROM user_uploads up
+            JOIN users u ON u.user_id = up.user_id
+            ORDER BY up.upload_date DESC
+            LIMIT 10
+        """)
+        recent = [
+            {
+                'id': r[0], 'email': r[1], 'full_name': r[2],
+                'filename': r[3], 'size': r[4], 'uploaded_at': r[5],
+            }
+            for r in cur.fetchall()
+        ]
+
+        return JSONResponse(status_code=200, content={
+            'success': True,
+            'data': {
+                'summary': {
+                    'total_files': total_files,
+                    'total_bytes': total_bytes,
+                    'users_with_uploads': users_with_uploads,
+                    'avg_bytes': avg_bytes,
+                },
+                'by_type': by_type,
+                'by_user': by_user,
+                'recent': recent,
+            },
+        })
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={'success': False, 'error': f'Disk istatistikleri alınamadı: {exc}'},
+        )
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+
+
+# --- 7. UTILS ENDPOINTS ---
 
 @admin_router.get("/utils/secret/{key}", summary="Secret Key Getir")
 async def get_secret(key: str):
@@ -862,7 +988,7 @@ async def get_secret(key: str):
     return JSONResponse(status_code=200, content={'success': True, 'data': row[0]})
 
 
-# --- 7. BAĞLANTI TEST ENDPOINT'LERİ ---
+# --- 8. BAĞLANTI TEST ENDPOINT'LERİ ---
 
 @admin_router.post("/utils/test-db", summary="PostgreSQL Bağlantı Testi")
 async def test_db_connection():

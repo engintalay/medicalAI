@@ -13,6 +13,7 @@ from config.auth_service import auth_service
 # --- Routers ---
 from routes import admin as admin_routes
 from routes.auth import router as patient_auth_router
+from routes.uploads import router as uploads_router
 from routes.admin import health_router
 
 # --- FastAPI App ---
@@ -104,6 +105,7 @@ async def patient_api_auth_guard(request: Request, call_next):
 
 # --- API Routes ---
 app.include_router(patient_auth_router)
+app.include_router(uploads_router)
 app.include_router(admin_routes.admin_router)
 app.include_router(health_router)
 
@@ -158,6 +160,11 @@ async def admin_llm_page():
 
 @app.get("/admin/users", include_in_schema=False)
 async def admin_users_page():
+    return _admin_page()
+
+
+@app.get("/admin/storage", include_in_schema=False)
+async def admin_storage_page():
     return _admin_page()
 
 
