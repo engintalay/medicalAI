@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical AI · Admin Girişi</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/admin.css">
+</head>
+<body class="login-page">
+    <div class="login-card">
+        <div class="login-brand">
+            <div class="brand-logo">🩺</div>
+            <div>
+                <div class="login-title">Medical AI</div>
+                <div class="login-sub">Yönetim paneline giriş</div>
+            </div>
+        </div>
+
+        <div id="loginAlert" class="alert alert-error" role="alert"></div>
+
+        <form class="login-form" id="loginForm" autocomplete="on">
+            <div class="field">
+                <label class="label" for="email">E-posta</label>
+                <input class="input" type="email" id="email" name="email"
+                       placeholder="admin@medicalai.com" autocomplete="username" required>
+            </div>
+            <div class="field">
+                <label class="label" for="password">Şifre</label>
+                <input class="input" type="password" id="password" name="password"
+                       placeholder="••••••••" autocomplete="current-password" required>
+            </div>
+            <button class="btn btn-primary" type="submit" id="loginBtn">
+                Giriş Yap
+            </button>
+        </form>
+
+        <div class="login-foot">
+            Medical AI Admin Panel · Yetkisiz erişim yasaktır
+        </div>
+    </div>
+
+    <script src="/static/login.js"></script>
+</body>
+</html>

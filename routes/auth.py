@@ -1,111 +1,181 @@
-# --- routes/auth.py ---
-# Denetçi Eylemi: Basamak 4 (Admin Auth) Kodlama
+# routes/auth.py — Hasta kimlik doğrulama ve profil API'si
+#
+# 03 parçası: register / login / me / logout + Redis oturum kara listesi.
+# Admin auth ayrıdır: /admin/api/auth/login (routes/admin.py).
 
-import os
-import secrets
-import bcrypt
 from typing import Optional
-from fastapi import APIRouter, Depends, Request, status, HTTPException, Header
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse as _FastJSONResponse
 from pydantic import BaseModel
-import jwt
-import datetime
 
-# --- Import Config Loader (Basamak 3 ile Bağlantı) ---
-from config.loader import get_config_loader
+from config.auth_service import auth_service
 
-# Router ve Model Tanımları
+
+class JSONResponse(_FastJSONResponse):
+    """datetime/Decimal gibi tipleri otomatik JSON'a çeviren JSONResponse."""
+
+    def render(self, content):
+        return super().render(jsonable_encoder(content))
+
+
 router = APIRouter()
 
-class LoginRequest(BaseModel):
-    username: str
-    password: str
 
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
+class PatientRegisterRequest(BaseModel):
     email: str
+    password: str
+    full_name: str
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    birth_year: Optional[int] = None
+    city: Optional[str] = None
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-    admin_role: bool
 
-# --- Global Token Ayarları (Config Loader ile) ---
-def get_jwt_secret() -> str:
-    loader = get_config_loader()
-    return loader.get("jwt_secret", "default_secret_key_change_it")
+class PatientLoginRequest(BaseModel):
+    email: str
+    password: str
 
-def get_admin_default_password() -> str:
-    loader = get_config_loader()
-    return loader.get("admin_default_password", "default123")
 
-# --- Admin Auth Service (JWT + Bcrypt) ---
-def hash_password(password: str) -> str:
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+class ProfileUpdateRequest(BaseModel):
+    full_name: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    birth_year: Optional[int] = None
+    city: Optional[str] = None
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
-def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None) -> str:
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.datetime.utcnow() + expire
-    else:
-        expire = datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, get_jwt_secret(), algorithm="HS256")
-    return encoded_jwt
+def _token_from_header(request: Request) -> Optional[str]:
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
+        return None
+    return header[7:]
 
-# --- API Endpoints ---
 
-@router.post("/login")
-async def login(request: LoginRequest):
-    """Admin Login Endpoint (Basamak 4)"""
-    # 1. DB'den admin kullanıcı bul
-    loader = get_config_loader()
-    admin_password = loader.get("admin_default_password")
-    
-    # 2. Şifre kontrolü
-    if verify_password(request.password, admin_password):
-        # 3. Token oluştur
-        access_token = create_access_token(data={"sub": "admin"})
-        return {"access_token": access_token, "token_type": "bearer"}
-    
-    raise HTTPException(status_code=401, detail="Invalid credentials")
+def require_patient(request: Request) -> dict:
+    """Hasta JWT'sini doğrular; admin token'ı hasta endpoint'lerinde geçmez."""
+    token = _token_from_header(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Yetkilendirme token'ı gerekli"},
+        )
+    if auth_service.is_token_revoked(token):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Token geçersiz kılınmış (çıkış yapılmış)"},
+        )
+    result = auth_service.verify_token(token, role="patient")
+    if not result.get("success"):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": result.get("message", "Geçersiz token")},
+        )
+    user = result.get("user") or {}
+    if not user.get("is_active", True):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Kullanıcı pasif durumda"},
+        )
+    return user
 
-@router.post("/register")
-async def register(request: RegisterRequest):
-    """Admin Register Endpoint (Basamak 4)"""
-    admin_password = loader.get("admin_default_password")
-    hashed = hash_password(request.password)
-    
-    # 4. DB'ye kaydet (system_config tablosu üzerinden)
-    loader = get_config_loader()
-    loader._cache["admin_username"] = request.username
-    loader._cache["admin_email"] = request.email
-    
-    access_token = create_access_token(data={"sub": "admin"})
-    return {"access_token": access_token, "token_type": "bearer"}
 
-# --- Middleware (Auth Check) ---
-def get_current_user(request: Request):
-    """JWT Token Kontrolü (Middleware)"""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Authentication needed")
-    
-    token = auth_header.split(" ")[1]
+def _auth_result(result: dict, success_code: int = 200) -> JSONResponse:
+    if not result.get("success"):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": result.get("message", "Giriş başarısız")},
+        )
+    user = result.get("user") or {}
+    return JSONResponse(
+        status_code=success_code,
+        content={
+            "success": True,
+            "message": result.get("message", ""),
+            "token": result.get("token"),
+            "user": user,
+            "data": user,
+        },
+    )
+
+
+@router.post("/api/auth/register", summary="Hasta Kaydı")
+async def patient_register(payload: PatientRegisterRequest):
     try:
-        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        result = auth_service.register_patient(
+            email=payload.email,
+            password=payload.password,
+            full_name=payload.full_name,
+            height_cm=payload.height_cm,
+            weight_kg=payload.weight_kg,
+            birth_year=payload.birth_year,
+            city=payload.city,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": f"Kayıt oluşturulamadı: {exc}"},
+        )
+    if not result.get("success"):
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": result.get("message", "Kayıt başarısız")},
+        )
+    return _auth_result(result, success_code=201)
 
-@router.get("/me")
-async def get_current_user_info():
-    """Admin Info Endpoint (Middleware Testi)"""
-    current_user = get_current_user(request)
-    return {"username": current_user.get("sub"), "role": "admin"}
+
+@router.post("/api/auth/login", summary="Hasta Girişi")
+async def patient_login(payload: PatientLoginRequest):
+    try:
+        result = auth_service.login(payload.email, payload.password, role="patient")
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": f"Giriş yapılamadı: {exc}"},
+        )
+    return _auth_result(result)
+
+
+@router.post("/api/auth/logout", summary="Hasta Çıkışı")
+async def patient_logout(request: Request):
+    token = _token_from_header(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": "Token gerekli"},
+        )
+    revoked = auth_service.revoke_token(token)
+    auth_service.delete_session(token)
+    return JSONResponse(
+        status_code=200,
+        content={"success": True, "message": "Çıkış yapıldı", "revoked": revoked},
+    )
+
+
+@router.get("/api/user/me", summary="Hasta Profili")
+@router.get("/api/user/profile", include_in_schema=False)
+async def get_my_profile(user: dict = Depends(require_patient)):
+    profile = auth_service.get_profile(user["user_id"])
+    if not profile:
+        return JSONResponse(
+            status_code=404,
+            content={"success": False, "error": "Kullanıcı bulunamadı"},
+        )
+    return JSONResponse(status_code=200, content={"success": True, "data": profile})
+
+
+@router.put("/api/user/me", summary="Hasta Profil Güncelle")
+@router.put("/api/user/profile", include_in_schema=False)
+async def update_my_profile(
+    payload: ProfileUpdateRequest,
+    user: dict = Depends(require_patient),
+):
+    try:
+        profile = auth_service.update_profile(user["user_id"], payload.model_dump(exclude_unset=True))
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"success": False, "error": f"Profil güncellenemedi: {exc}"},
+        )
+    return JSONResponse(status_code=200, content={"success": True, "data": profile})

@@ -13,6 +13,7 @@ def get_db_connection(config: dict) -> psycopg2.connection:
         port=int(config.get('db_port', '5432')),
         dbname=config.get('db_name', 'medical_ai'),
         user=config.get('db_user', 'medical_user'),
+        password=config.get('db_password', ''),
     )
 
 
@@ -46,7 +47,9 @@ def create_health_metric(
             VALUES (%s, %s, %s, %s, %s)
             RETURNING metric_id
         """, (user_id, metric_name, value, unit, recorded_at))
-        return cur.fetchone()['metric_id']
+        metric_id = cur.fetchone()['metric_id']
+    conn.commit()
+    return metric_id
 
 
 def get_health_metrics(
@@ -72,8 +75,10 @@ def get_health_metrics(
     count_conditions = ["user_id = %s"]
     if metric_name:
         count_conditions.append("metric_name = %s")
-    count_query = "SELECT COUNT(*) FROM health_metrics WHERE " + " AND ".join(count_conditions)
-    count_params = ([user_id, metric_name] if metric_name else [user_id])
+    count_query = "SELECT COUNT(*) AS count FROM health_metrics WHERE " + " AND ".join(count_conditions)
+    count_params = [user_id]
+    if metric_name:
+        count_params.append(metric_name)
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(count_query, count_params)
@@ -86,7 +91,10 @@ def get_health_metrics(
     if metric_name:
         metrics_query += " AND metric_name = %s"
     metrics_query += " ORDER BY recorded_at DESC LIMIT %s OFFSET %s"
-    metrics_params = ([user_id, metric_name] if metric_name else [user_id], limit, offset)
+    metrics_params = [user_id]
+    if metric_name:
+        metrics_params.append(metric_name)
+    metrics_params.extend([limit, offset])
 
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(metrics_query, metrics_params)
@@ -162,7 +170,9 @@ def update_health_metric(
             f"WHERE metric_id = %s AND user_id = %s",
             tuple(values)
         )
-        return cur.rowcount == 1
+        updated = cur.rowcount == 1
+    conn.commit()
+    return updated
 
 
 def delete_health_metric(
@@ -180,7 +190,9 @@ def delete_health_metric(
             DELETE FROM health_metrics
             WHERE metric_id = %s AND user_id = %s
         """, (metric_id, user_id))
-        return cur.rowcount == 1
+        deleted = cur.rowcount == 1
+    conn.commit()
+    return deleted
 
 
 def get_health_stats(
@@ -194,8 +206,8 @@ def get_health_stats(
     Returns:
         count, avg_value, min_value, max_value içeren sözlük
     """
-    conditions = ["user_id = %s", "recorded_at >= NOW() - INTERVAL '%s days'"]
-    values = [user_id, days]
+    conditions = ["user_id = %s", "recorded_at >= NOW() - (%s || ' days')::interval"]
+    values = [user_id, str(days)]
 
     if metric_name:
         conditions.append("metric_name = %s")

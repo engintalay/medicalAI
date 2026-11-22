@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(150) NOT NULL,
     role VARCHAR(20) NOT NULL DEFAULT 'patient', -- patient, admin
     is_active BOOLEAN DEFAULT TRUE,
+    height_cm NUMERIC(5, 2),
+    weight_kg NUMERIC(5, 2),
+    birth_year INTEGER,
+    city VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP WITH TIME ZONE
 );

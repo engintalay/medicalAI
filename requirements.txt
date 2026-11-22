@@ -4,4 +4,8 @@ psycopg2-binary
 redis
 python-dotenv
 pydantic # Genellikle FastAPI ile birlikte kullanılır, ekleyelim
+PyJWT # Admin JWT auth
+bcrypt # Password hashing
+python-multipart # Form-data login için
+psutil # Monitoring endpoint
 sentence-transformers # RAG için gerekecek

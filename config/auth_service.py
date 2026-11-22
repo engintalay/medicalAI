@@ -3,6 +3,8 @@
 import jwt
 import bcrypt
 import os
+import time
+import redis
 from datetime import timedelta, datetime
 from typing import Dict, Any, Optional
 from config.loader import get_config_loader
@@ -22,11 +24,19 @@ class AuthService:
         self._init_redis()
     
     def _init_redis(self):
-        """Redis bağlantısını oluştur"""
+        """Redis bağlantısını oluştur (şifre destekli)"""
         try:
             redis_host = self._config.get('redis_host', 'localhost')
             redis_port = self._config.get('redis_port', '6379')
-            self._redis = redis.Redis(host=redis_host, port=int(redis_port), decode_responses=True)
+            redis_password = os.getenv('REDIS_PASSWORD') or None
+            redis_username = os.getenv('REDIS_USERNAME') or None
+            self._redis = redis.Redis(
+                host=redis_host,
+                port=int(redis_port),
+                password=redis_password,
+                username=redis_username,
+                decode_responses=True,
+            )
             self._redis.ping()
             print("✅ Redis Bağlantısı Başarıyla Kuruldu.")
         except Exception as e:
@@ -76,7 +86,8 @@ class AuthService:
             host=self._config.get('db_host', 'localhost'),
             port=int(self._config.get('db_port', '5432')),
             dbname=self._config.get('db_name', 'medical_ai'),
-            user=self._config.get('db_user', 'medical_user')
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
         )
         cur = conn.cursor()
         
@@ -120,39 +131,59 @@ class AuthService:
         Returns:
             JWT token ve kullanıcı bilgileri
         """
-        # Şifreyi hash'le
-        password_hash = self._bcrypt_hash(password)
-        
         # DB'de user'ı bul
         conn = psycopg2.connect(
             host=self._config.get('db_host', 'localhost'),
             port=int(self._config.get('db_port', '5432')),
             dbname=self._config.get('db_name', 'medical_ai'),
-            user=self._config.get('db_user', 'medical_user')
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
         )
         cur = conn.cursor()
         
         cur.execute("""
             SELECT user_id, email, full_name, role, is_active, created_at, last_login, password_hash
             FROM users 
-            WHERE email = %s AND password_hash = %s
-        """, (email, password_hash))
+            WHERE email = %s
+        """, (email,))
         
         user = cur.fetchone()
         cur.close()
         conn.close()
         
-        if not user:
+        # Kullanıcı yoksa veya bcrypt doğrulaması başarısızsa reddet
+        if not user or not bcrypt.checkpw(password.encode('utf-8'), user[7].encode('utf-8')):
             return {
                 'success': False,
                 'message': 'Kullanıcı bulunamadı veya parola hatalı',
                 'token': None,
                 'user': None
             }
+
+        # Pasif kullanıclar giriş yapamaz
+        if not user[4]:
+            return {
+                'success': False,
+                'message': 'Kullanıcı pasif durumda',
+                'token': None,
+                'user': None
+            }
+
+        # Rol kontrolü (admin girişinde patient hesabı kullanılamasın)
+        if role and user[3] != role:
+            return {
+                'success': False,
+                'message': f'Bu hesap {role} rolüne sahip değil',
+                'token': None,
+                'user': None
+            }
         
         # JWT token oluştur
         token = self.generate_jwt(user[1], user[3])
-        
+
+        # Redis oturum kaydı (best-effort; Redis yoksa giriş yine çalışır)
+        self.store_session(user[0], token, user[3])
+
         # Son giriş tarihini güncelle
         self._update_last_login(user[0])
         
@@ -196,19 +227,226 @@ class AuthService:
             host=self._config.get('db_host', 'localhost'),
             port=int(self._config.get('db_port', '5432')),
             dbname=self._config.get('db_name', 'medical_ai'),
-            user=self._config.get('db_user', 'medical_user')
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
         )
         cur = conn.cursor()
         
         cur.execute("""
             UPDATE users 
-            SET last_login = NOW(), created_at = created_at
+            SET last_login = NOW()
             WHERE user_id = %s
         """, (user_id,))
         
         conn.commit()
         cur.close()
         conn.close()
+
+    def store_session(self, user_id: int, token: str, role: str) -> bool:
+        """Redis'te oturum kaydı tutar (token süresi kadar TTL)."""
+        if not self._redis:
+            return False
+        try:
+            secret_key = self._config.get('jwt_secret', 'medical_ai_default_secret_2026')
+            payload = jwt.decode(
+                token, secret_key, algorithms=['HS256'],
+                options={'verify_exp': False}
+            )
+            ttl = max(1, int(float(payload.get('exp') or 0) - time.time()))
+            self._redis.setex(f"session:{token}", ttl, f"{user_id}:{role}")
+            return True
+        except Exception:
+            return False
+
+    def delete_session(self, token: str) -> bool:
+        """Oturum kaydını siler (logout)."""
+        if not self._redis:
+            return False
+        try:
+            self._redis.delete(f"session:{token}")
+            return True
+        except Exception:
+            return False
+
+    def register_patient(
+        self,
+        email: str,
+        password: str,
+        full_name: str,
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
+        birth_year: Optional[int] = None,
+        city: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Hasta kaydı oluşturur ve JWT döndürür."""
+        email = (email or '').strip().lower()
+        full_name = (full_name or '').strip()
+
+        if not email or '@' not in email:
+            return {'success': False, 'message': 'Geçerli bir email adresi girin', 'token': None, 'user': None}
+        if len(password or '') < 8:
+            return {'success': False, 'message': 'Şifre en az 8 karakter olmalı', 'token': None, 'user': None}
+        if not full_name:
+            return {'success': False, 'message': 'Ad soyad zorunlu', 'token': None, 'user': None}
+        if birth_year is not None and not (1900 <= int(birth_year) <= datetime.utcnow().year):
+            return {'success': False, 'message': 'Geçersiz doğum yılı', 'token': None, 'user': None}
+        if self.get_user_by_email(email):
+            return {'success': False, 'message': 'Bu email ile kayıtlı kullanıcı var', 'token': None, 'user': None}
+
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                INSERT INTO users
+                    (email, password_hash, full_name, role, is_active,
+                     height_cm, weight_kg, birth_year, city)
+                VALUES (%s, %s, %s, 'patient', TRUE, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING user_id, email, full_name, role, is_active,
+                          created_at, last_login, height_cm, weight_kg, birth_year, city
+            """, (
+                email, self._bcrypt_hash(password), full_name,
+                height_cm, weight_kg, birth_year, city,
+            ))
+            row = cur.fetchone()
+            conn.commit()
+            if not row:
+                return {'success': False, 'message': 'Bu email ile kayıtlı kullanıcı var', 'token': None, 'user': None}
+        except Exception as exc:
+            conn.rollback()
+            raise exc
+        finally:
+            cur.close()
+            conn.close()
+
+        user = self._shape_user(row)
+        token = self.generate_jwt(user['email'], user['role'])
+        self.store_session(user['user_id'], token, user['role'])
+        return {
+            'success': True,
+            'message': 'Kayıt oluşturuldu',
+            'token': token,
+            'user': user,
+        }
+
+    def _shape_user(self, row) -> Dict[str, Any]:
+        """users satırını API yanıtına çevirir (şifre hash'i dahil edilmez)."""
+        if len(row) >= 11:
+            profile = {
+                'height_cm': float(row[7]) if row[7] is not None else None,
+                'weight_kg': float(row[8]) if row[8] is not None else None,
+                'birth_year': row[9],
+                'city': row[10],
+            }
+        else:
+            profile = {}
+        base = {
+            'user_id': row[0],
+            'id': row[0],
+            'email': row[1],
+            'full_name': row[2],
+            'role': row[3],
+            'is_active': row[4],
+            'created_at': row[5],
+            'last_login': row[6],
+        }
+        base.update(profile)
+        return base
+
+    def get_profile(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Hasta profilini (boy/kilo/demografi) döndürür."""
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                SELECT user_id, email, full_name, role, is_active,
+                       created_at, last_login, height_cm, weight_kg, birth_year, city
+                FROM users WHERE user_id = %s
+            """, (user_id,))
+            row = cur.fetchone()
+        finally:
+            cur.close()
+            conn.close()
+        return self._shape_user(row) if row else None
+
+    def update_profile(self, user_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Profil alanlarını güvenli biçimde günceller (beyaz liste)."""
+        allowed = {
+            'full_name': 'full_name',
+            'height_cm': 'height_cm',
+            'weight_kg': 'weight_kg',
+            'birth_year': 'birth_year',
+            'city': 'city',
+        }
+        sets, values = [], []
+        for key, column in allowed.items():
+            if key in updates and updates[key] is not None:
+                sets.append(f"{column} = %s")
+                values.append(updates[key])
+        if not sets:
+            return self.get_profile(user_id)
+
+        values.append(user_id)
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE users SET " + ", ".join(sets) + " WHERE user_id = %s",
+                values,
+            )
+            conn.commit()
+        except Exception as exc:
+            conn.rollback()
+            raise exc
+        finally:
+            cur.close()
+            conn.close()
+        return self.get_profile(user_id)
+
+    def revoke_token(self, token: str) -> bool:
+        """JWT'yi Redis kara listesine ekler (logout sonrası geçersiz kılar)."""
+        if not self._redis:
+            return False
+        try:
+            secret_key = self._config.get('jwt_secret', 'medical_ai_default_secret_2026')
+            payload = jwt.decode(
+                token, secret_key, algorithms=['HS256'],
+                options={'verify_exp': False}
+            )
+            expires_at = float(payload.get('exp') or 0)
+            ttl = max(1, int(expires_at - time.time()))
+            self._redis.setex(f"token_blacklist:{token}", ttl, "1")
+            self._redis.delete(f"session:{token}")
+            return True
+        except Exception:
+            return False
+
+    def is_token_revoked(self, token: str) -> bool:
+        """Token logout ile iptal edilmiş mi?"""
+        if not self._redis:
+            return False
+        try:
+            return bool(self._redis.exists(f"token_blacklist:{token}"))
+        except Exception:
+            return False
 
     def verify_token(self, token: str, role: str = 'admin') -> Dict[str, Any]:
         """
@@ -241,7 +479,8 @@ class AuthService:
                 host=self._config.get('db_host', 'localhost'),
                 port=int(self._config.get('db_port', '5432')),
                 dbname=self._config.get('db_name', 'medical_ai'),
-                user=self._config.get('db_user', 'medical_user')
+                user=self._config.get('db_user', 'medical_user'),
+                password=self._config.get('db_password', '')
             )
             cur = conn.cursor()
             
@@ -303,7 +542,8 @@ class AuthService:
             host=self._config.get('db_host', 'localhost'),
             port=int(self._config.get('db_port', '5432')),
             dbname=self._config.get('db_name', 'medical_ai'),
-            user=self._config.get('db_user', 'medical_user')
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
         )
         cur = conn.cursor()
         
@@ -344,7 +584,8 @@ class AuthService:
             host=self._config.get('db_host', 'localhost'),
             port=int(self._config.get('db_port', '5432')),
             dbname=self._config.get('db_name', 'medical_ai'),
-            user=self._config.get('db_user', 'medical_user')
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
         )
         cur = conn.cursor()
         

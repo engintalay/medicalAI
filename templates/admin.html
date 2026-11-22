@@ -3,85 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical AI - Admin Panel</title>
-    <link rel="stylesheet" href="/static/admin.css">
+    <title>Medical AI · Admin Panel</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/admin.css">
 </head>
 <body>
-    <!-- Sidebar Navigasyon -->
-    <aside class="sidebar">
-        <div class="sidebar-header">
-            <h2>Medical AI</h2>
-            <p class="subtitle">Admin Panel</p>
-        </div>
-        
-        <nav class="sidebar-nav">
-            <a href="/admin" class="nav-item active">
-                <span class="nav-icon">📊</span>
-                <span class="nav-text">Dashboard</span>
-            </a>
-            
-            <a href="/admin/config" class="nav-item">
-                <span class="nav-icon">⚙️</span>
-                <span class="nav-text">Sistem Config</span>
-            </a>
-            
-            <a href="/admin/users" class="nav-item">
-                <span class="nav-icon">👥</span>
-                <span class="nav-text">Kullanıcılar</span>
-            </a>
-            
-            <a href="/admin/monitoring" class="nav-item">
-                <span class="nav-icon">📈</span>
-                <span class="nav-text">İzleme</span>
-            </a>
-            
-            <a href="/admin/logs" class="nav-item">
-                <span class="nav-icon">📝</span>
-                <span class="nav-text">Loglar</span>
-            </a>
-        </nav>
-        
-        <div class="sidebar-footer">
-            <a href="/admin/logout" class="nav-item">
-                <span class="nav-icon">🚪</span>
-                <span class="nav-text">Çıkış Yap</span>
-            </a>
-        </div>
-    </aside>
-
-    <!-- Ana İçerik -->
-    <main class="main-content">
-        <!-- Header -->
-        <header class="top-header">
-            <div class="header-left">
-                <h1 id="pageTitle">Dashboard</h1>
-            </div>
-            
-            <div class="header-right">
-                <div class="user-info">
-                    <span id="userName" class="user-name">Sistem Yöneticisi</span>
-                    <span id="userEmail" class="user-email">admin@medicalai.com</span>
+    <div class="app">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">🩺</div>
+                <div class="brand-text">
+                    <div class="brand-name">Medical AI</div>
+                    <div class="brand-sub">Admin Panel</div>
                 </div>
             </div>
-        </header>
 
-        <!-- İçerik Alanı -->
-        <div id="contentArea" class="content-area">
-            <!-- Buraya dinamik içerik yüklenecek -->
-            <div class="loading">
-                <div class="spinner"></div>
-                <p>İçerik yükleniyor...</p>
+            <nav class="nav" aria-label="Ana menü">
+                <div class="nav-label">Genel</div>
+                <a href="/admin" class="nav-item active" data-path="/admin">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="/admin/monitoring" class="nav-item" data-path="/admin/monitoring">
+                    <span class="nav-icon">📈</span>
+                    <span class="nav-text">Sistem İzleme</span>
+                </a>
+
+                <div class="nav-label">Yönetim</div>
+                <a href="/admin/config" class="nav-item" data-path="/admin/config">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">Sistem Config</span>
+                </a>
+                <a href="/admin/llm" class="nav-item" data-path="/admin/llm">
+                    <span class="nav-icon">🧠</span>
+                    <span class="nav-text">LLM Ayarları</span>
+                </a>
+                <a href="/admin/users" class="nav-item" data-path="/admin/users">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">Kullanıcılar</span>
+                </a>
+                <a href="/admin/health" class="nav-item" data-path="/admin/health">
+                    <span class="nav-icon">❤️</span>
+                    <span class="nav-text">Sağlık Metrikleri</span>
+                </a>
+                <a href="/admin/db-config" class="nav-item" data-path="/admin/db-config">
+                    <span class="nav-icon">🗄️</span>
+                    <span class="nav-text">Veritabanı Ayarları</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <button type="button" class="nav-item" id="logoutBtn">
+                    <span class="nav-icon">🚪</span>
+                    <span class="nav-text">Çıkış Yap</span>
+                </button>
             </div>
-        </div>
+        </aside>
 
-        <!-- Toast Notification -->
-        <div id="toast" class="toast">
-            <span class="toast-message"></span>
-        </div>
-    </main>
+        <!-- Main -->
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <div class="topbar-title" id="pageTitle">Dashboard</div>
+                </div>
+                <div class="topbar-right">
+                    <button type="button" class="btn btn-secondary btn-sm" id="refreshBtn" title="Sayfayı yenile">
+                        ⟳ Yenile
+                    </button>
+                    <div class="user-chip">
+                        <div class="avatar" id="userAvatar">A</div>
+                        <div class="user-meta">
+                            <span class="user-name" id="userName">Sistem Yöneticisi</span>
+                            <span class="user-email" id="userEmail">admin@medicalai.com</span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content" id="contentArea">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Yükleniyor...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="/static/admin.js"></script>
 </body>
