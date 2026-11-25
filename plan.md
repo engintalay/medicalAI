@@ -120,7 +120,21 @@ kaldırıldığı için depolama tarafının görünürlüğü bu ekranla sağla
 - **Kaynak:** `user_uploads` + `users` (LEFT JOIN); `size_bytes` toplamları, `upload_date` son yükleme.
 - **Gizlilik:** yalnızca istatistik; dosya içeriği ve fiziksel yol admin ekranında gösterilmez.
 
-### 14.4 İzleme
+### 14.4 Vision LLM / görselden metin (05) — tamamlandı
+- `POST /api/uploads/{id}/extract` → `{text, pages, source, model_used}`.
+- `llm_vision_supported=true` → `source="primary_llm"`; `vision_llm_enabled=true` → `source="vision_llm"`.
+- **Metin tabanlı PDF'ler stdlib `zlib` ile yerel okunur** (`source="local_pdf"`, LLM çağrısı yok);
+  taranan PDF ve görseller vision LLM'e gönderilir. (Not: sunucuda vision yok değil; yalnızca
+  `Meta-Llama-3.1-8B-Instruct` modelinde görsel desteği yok. `Ornith-1.5-9B` görselleri okuyor.)
+- TXT dosyaları doğrudan okunur (`source="local_text"`). Yeni Python bağımlılığı eklenmedi.
+- Kaydedilmemiş API anahtarı istek gövdesiyle kullanılabilir; hata mesajlarında anahtar maskelenir,
+  model adı ve dosya yolu loglanmaz.
+- **Admin LLM ekranında canlı test:** `POST /admin/api/llm/test` (metin ping'i) ve
+  `POST /admin/api/llm/test-vision` (sentetik kırmızı PNG gönderir). İki endpoint de kaydedilmemiş
+  form değerleriyle çalışır; scope `primary` veya `vision`. Ana LLM'in görsel destekleyip desteklemediği
+  de `test-vision` ile ayrıca sınanabilir. Reasoning modelleri için `max_tokens=256`.
+
+### 14.5 İzleme
 - Dashboard'daki LLM durumu `llm_api_key` varlığına göre `configured` hesaplar; gizli anahtar maskeli
   döndüğü için alan boş görünür ama değer korunur. Sağlık metrikleri admin menüsünden geçici olarak
   kaldırıldı; kod ve `/admin/api/health/*` endpoint'leri korundu (08 parçasına taşınacak).

@@ -213,6 +213,21 @@ button { font: inherit; }
 .model-status.status-success { color: #047857; }
 .model-status.status-error { color: var(--danger); }
 .model-status.status-info { color: var(--text-muted); }
+.llm-test-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.llm-test-row .model-status { margin: 0; word-break: break-word; }
+.llm-test-row-sub {
+    margin-top: 6px;
+    padding-top: 0;
+    border-top: none;
+}
 
 /* ---------- Checkbox rows ---------- */
 .check-stack { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }

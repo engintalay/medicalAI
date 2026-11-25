@@ -1327,6 +1327,91 @@
         }
     }
 
+    function setTestStatus(scope, message, type, kind) {
+        const prefix = kind === 'vision' ? 'vision-test-status-' : 'test-status-';
+        const status = document.getElementById(prefix + scope);
+        if (!status) return;
+        status.className = 'hint model-status status-' + (type || 'info');
+        status.textContent = message;
+    }
+
+    function llmTestSection(scope) {
+        return '<div class="llm-test-row">' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="test-' + esc(scope) + '-llm">' +
+            '🧪 Cevabı Test Et</button>' +
+            '<span class="hint model-status" id="test-status-' + esc(scope) + '">' +
+            'Formdaki ayarlarla kaydetmeden test eder.</span>' +
+            '</div>' +
+            '<div class="llm-test-row llm-test-row-sub">' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="vision-test-' + esc(scope) + '-llm">' +
+            '👁️ Görsel Testi</button>' +
+            '<span class="hint model-status" id="vision-test-status-' + esc(scope) + '">' +
+            'Sentetik görsel gönderir; modelin görseli okuyup okumadığını gösterir.</span>' +
+            '</div>';
+    }
+
+    async function runLlmTest(scope, kind) {
+        const isVision = kind === 'vision';
+        const isPrimary = scope === 'primary';
+        const providerId = isPrimary ? 'llm-provider' : 'vision-llm-provider';
+        const baseId = isPrimary ? 'cfg-llm_base_url' : 'cfg-vision_llm_base_url';
+        const modelId = isPrimary ? 'cfg-llm_model' : 'cfg-vision_llm_model';
+        const keyId = isPrimary ? 'cfg-llm_api_key' : 'cfg-vision_llm_api_key';
+        const button = document.getElementById(
+            (isVision ? 'vision-test-' : 'test-') + scope + '-llm'
+        );
+        const providerEl = document.getElementById(providerId);
+        const baseEl = document.getElementById(baseId);
+        const modelEl = document.getElementById(modelId);
+        const keyEl = document.getElementById(keyId);
+
+        const provider = providerEl ? providerEl.value : 'openai';
+        const baseUrl = baseEl ? baseEl.value.trim() : '';
+        const model = modelEl ? modelEl.value.trim() : '';
+        const apiKey = keyEl ? keyEl.value.trim() : '';
+        const setStatus = function (message, type) { setTestStatus(scope, message, type, kind); };
+
+        if (provider === 'custom' && !baseUrl) {
+            setStatus('OpenAI uyumlu sağlayıcı için API Base URL girin.', 'error');
+            showToast('OpenAI uyumlu sağlayıcı için API Base URL girin.', 'error');
+            return;
+        }
+        if (!model) {
+            setStatus('Test için model seçilmedi.', 'error');
+            showToast('Test için model seçilmedi.', 'error');
+            return;
+        }
+
+        if (button) button.disabled = true;
+        setStatus(isVision ? 'Görsel gönderiliyor...' : 'LLM yanıtı bekleniyor...', 'info');
+
+        try {
+            const response = await api(isVision ? '/llm/test-vision' : '/llm/test', {
+                method: 'POST',
+                body: {
+                    scope: scope,
+                    provider: provider,
+                    base_url: baseUrl,
+                    api_key: apiKey,
+                    model: model
+                }
+            });
+            const data = response.data || {};
+            setStatus(
+                (isVision ? '✅ Görsel okundu: "' : '✅ Yanıt: "') + (data.reply || '') +
+                '" · ' + (data.latency_ms || 0) + ' ms · ' + (data.model || model),
+                'success');
+            showToast((isPrimary ? 'Ana LLM' : 'Vision LLM') +
+                (isVision ? ' görseli okudu.' : ' yanıt verdi.'), 'success');
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            setStatus('❌ ' + error.message, 'error');
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     function updateLlmUi() {
         const primaryVisionEl = document.getElementById('llm-vision-supported');
         const visionEnabledEl = document.getElementById('vision-llm-enabled');
@@ -1395,6 +1480,7 @@
                 'Ana LLM görsel (vision) destekliyor',
                 'Destekliyorsa görsel okuma için ikinci LLM kullanılmaz.') +
             '</div>' +
+            llmTestSection('primary') +
             '</div>' +
             '<div class="card" id="visionLlmCard">' +
             '<div class="card-head"><div class="card-title">Vision LLM · Görsel Okuma</div>' +
@@ -1413,6 +1499,7 @@
             baseUrlField(configs, 'vision_llm_base_url', 'cfg-vision_llm_base_url', 'vision', visionProvider,
                 'Boş bırakılırsa ' + (LLM_DEFAULT_BASE_URLS[visionProvider] || 'sağlayıcı varsayılanı') + ' kullanılır.') +
             '</div>' +
+            llmTestSection('vision') +
             '</div>' +
             '</div>' +
             '<div class="form-actions">' +
@@ -1438,6 +1525,10 @@
         ['primary', 'vision'].forEach(function (scope) {
             const loadButton = document.getElementById('load-' + scope + '-models');
             if (loadButton) loadButton.addEventListener('click', function () { loadModels(scope); });
+            const testButton = document.getElementById('test-' + scope + '-llm');
+            if (testButton) testButton.addEventListener('click', function () { runLlmTest(scope, 'text'); });
+            const visionButton = document.getElementById('vision-test-' + scope + '-llm');
+            if (visionButton) visionButton.addEventListener('click', function () { runLlmTest(scope, 'vision'); });
         });
 
         const saveButton = document.getElementById('saveLlmBtn');

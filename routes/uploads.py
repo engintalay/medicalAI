@@ -8,12 +8,13 @@ import uuid
 from pathlib import Path
 
 import psycopg2
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Body, Depends, File, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse as _FastJSONResponse
 
 from config.loader import get_config_loader
 from routes.auth import require_patient
+from services.vision import VisionError, extract_text
 
 
 class JSONResponse(_FastJSONResponse):
@@ -158,6 +159,40 @@ async def upload_file(
             conn.close()
 
     return JSONResponse(status_code=200, content={"success": True, "data": _row_to_dict(row)})
+
+
+@router.post("/api/uploads/{upload_id}/extract", summary="Dosyadan Metin Çıkar")
+async def extract_upload_text(
+    upload_id: int,
+    payload: dict = Body(default=None),
+    user: dict = Depends(require_patient),
+):
+    """Yüklenen PDF/görseli vision LLM ile metne çevirir (05 parçası).
+
+    Body (opsiyonel): {"api_key": "kaydedilmemiş anahtar", "prompt": "..."}
+    API anahtarı verilmezse DB'deki ilgili anahtar kullanılır.
+    """
+    payload = payload or {}
+    api_key = payload.get("api_key")
+    prompt = payload.get("prompt")
+    if api_key is not None:
+        api_key = str(api_key)
+    if prompt is not None:
+        prompt = str(prompt)[:4000]
+
+    try:
+        result = await extract_text(
+            upload_id,
+            int(user["user_id"]),
+            api_key=api_key,
+            prompt=prompt,
+        )
+    except VisionError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"success": False, "error": str(exc)},
+        )
+    return JSONResponse(status_code=200, content={"success": True, "data": result})
 
 
 @router.get("/api/uploads", summary="Dosyaları Listele")

@@ -1,9 +1,12 @@
 # routes/admin.py
 
 import asyncio
+import base64
 import json
 import os
+import struct
 import time
+import zlib
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request as UrlRequest, urlopen
@@ -448,6 +451,216 @@ async def list_llm_models(request: Request):
         })
 
     return JSONResponse(status_code=200, content={'success': True, 'data': result})
+
+
+def _sanitize_llm_detail(raw: bytes, api_key: str) -> str:
+    """Sunucu hata metninden API anahtarını temizler."""
+    detail = raw.decode('utf-8', errors='replace')
+    detail = ' '.join(detail.split())[:200]
+    if api_key:
+        detail = detail.replace(api_key, '***')
+    return detail
+
+
+def _test_image_data_url() -> str:
+    """Test için stdlib ile 64x64 kırmızı PNG üretir (harici bağımlılık yok)."""
+    width = height = 64
+    row = b'\x00' + bytes((220, 30, 40)) * width
+    raw = row * height
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack('>I', len(data)) + tag + data +
+                struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    png = (b'\x89PNG\r\n\x1a\n' +
+           chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) +
+           chunk(b'IDAT', zlib.compress(raw)) +
+           chunk(b'IEND', b''))
+    return 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')
+
+
+def _chat_completion_probe(
+    provider: str, base_url: str, api_key: str, model: str, image_url: str | None = None
+) -> dict:
+    """LLM'e ping (veya görsel) gönderir; cevap süresini ve metni döner."""
+    endpoint_base = base_url
+    if provider == 'ollama' and not endpoint_base.endswith('/v1'):
+        endpoint_base += '/v1'
+
+    if image_url:
+        user_content = [
+            {'type': 'text', 'text': 'Bu görselin ana rengi nedir? Sadece renk adını yazın.'},
+            {'type': 'image_url', 'image_url': {'url': image_url}},
+        ]
+    else:
+        user_content = 'Ping. Lütfen sadece "pong" yazın.'
+
+    body = {
+        'model': model,
+        'temperature': 0,
+        # Reasoning modelleri (örn. Ornith) ilk token'ları düşünceye harcar;
+        # 32 yetersiz kalıp boş içerik döner. 256 güvenli üst sınır.
+        'max_tokens': 256,
+        'messages': [{'role': 'user', 'content': user_content}],
+    }
+    headers = dict(LLM_HTTP_HEADERS)
+    headers['Content-Type'] = 'application/json'
+    if api_key and provider != 'ollama':
+        headers['Authorization'] = 'Bearer ' + api_key
+
+    request = UrlRequest(
+        endpoint_base + '/chat/completions',
+        data=json.dumps(body).encode('utf-8'),
+        headers=headers,
+        method='POST',
+    )
+    started = time.perf_counter()
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw = response.read(256 * 1024)
+    except HTTPError as exc:
+        detail = ''
+        try:
+            detail = _sanitize_llm_detail(exc.read(400), api_key)
+        except Exception:
+            pass
+        message = 'LLM yanıt vermedi (HTTP %s).' % exc.code
+        if detail:
+            message += ' Sunucu: ' + detail
+        raise ValueError(message)
+    except (URLError, TimeoutError) as exc:
+        reason = getattr(exc, 'reason', exc)
+        raise ValueError('LLM erişilemedi: ' + str(reason)[:160])
+
+    latency_ms = round((time.perf_counter() - started) * 1000)
+    try:
+        payload = json.loads(raw.decode('utf-8'))
+    except (ValueError, UnicodeDecodeError):
+        raise ValueError('LLM geçersiz JSON döndürdü.')
+
+    if not isinstance(payload, dict):
+        raise ValueError('LLM beklenmeyen bir yanıt döndürdü.')
+    if isinstance(payload.get('error'), dict):
+        raise ValueError('LLM hatası: ' + str(payload['error'].get('message') or '')[:200])
+    choices = payload.get('choices') or []
+    if not choices or not isinstance(choices, list):
+        raise ValueError('LLM boş yanıt döndürdü.')
+
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    content = (first.get('message') or {}).get('content') or first.get('text') or ''
+    if isinstance(content, list):
+        content = '\n'.join(
+            str(part.get('text') or '') if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    reply = str(content).strip()[:200]
+    if not reply:
+        raise ValueError('LLM boş metin döndürdü.')
+
+    return {
+        'ok': True,
+        'reply': reply,
+        'latency_ms': latency_ms,
+        'model': model,
+        'base_url': base_url,
+        'test': 'vision' if image_url else 'text',
+    }
+
+
+def _prepare_llm_test(body):
+    """Ortak doğrulama. (params, None) veya (None, JSONResponse) döner."""
+    if not isinstance(body, dict):
+        return None, JSONResponse(status_code=422, content={
+            'success': False, 'error': 'JSON gövdesi gerekli.'
+        })
+
+    scope = str(body.get('scope') or 'primary').strip().lower()
+    provider = str(body.get('provider') or 'openai').strip().lower()
+    base_url = str(body.get('base_url') or '')
+    api_key = str(body.get('api_key') or '').strip()
+    model = str(body.get('model') or '').strip()
+
+    if scope not in ('primary', 'vision'):
+        return None, JSONResponse(status_code=400, content={
+            'success': False, 'error': 'Geçersiz scope: ' + scope
+        })
+    if provider not in LLM_SUPPORTED_PROVIDERS:
+        return None, JSONResponse(status_code=400, content={
+            'success': False, 'error': 'Desteklenmeyen sağlayıcı: ' + provider
+        })
+
+    if not api_key:
+        api_key = _config.get('llm_api_key' if scope == 'primary' else 'vision_llm_api_key') or ''
+    if not model:
+        model = _config.get('llm_model' if scope == 'primary' else 'vision_llm_model') or ''
+    if not model:
+        return None, JSONResponse(status_code=400, content={
+            'success': False, 'error': 'Test için model seçilmedi.'
+        })
+
+    try:
+        resolved = _resolve_llm_base_url(provider, base_url)
+    except ValueError as exc:
+        return None, JSONResponse(status_code=400, content={'success': False, 'error': str(exc)})
+
+    if provider != 'ollama' and not api_key:
+        return None, JSONResponse(status_code=400, content={
+            'success': False, 'error': 'API anahtarı boş. Anahtarı girin veya önce kaydedin.'
+        })
+
+    return {
+        'scope': scope, 'provider': provider, 'base_url': resolved,
+        'api_key': api_key, 'model': model,
+    }, None
+
+
+async def _run_llm_probe(params: dict, image_url: str | None = None) -> JSONResponse:
+    try:
+        result = await asyncio.to_thread(
+            _chat_completion_probe,
+            params['provider'], params['base_url'], params['api_key'], params['model'],
+            image_url,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=502, content={
+            'success': False, 'error': str(exc), 'data': {'ok': False}
+        })
+    except Exception as exc:
+        return JSONResponse(status_code=502, content={
+            'success': False, 'error': 'LLM testi başarısız: ' + str(exc)[:160],
+            'data': {'ok': False},
+        })
+    return JSONResponse(status_code=200, content={'success': True, 'data': result})
+
+
+@admin_router.post("/llm/test", summary="LLM Cevap Testi")
+async def test_llm(request: Request):
+    """Formdaki (kaydedilmemiş olabilen) ayarlarla LLM'e ping atar."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    params, error = _prepare_llm_test(body)
+    if error:
+        return error
+    return await _run_llm_probe(params)
+
+
+@admin_router.post("/llm/test-vision", summary="LLM Görsel Testi")
+async def test_vision_llm(request: Request):
+    """Formdaki ayarlarla LLM'e sentetik bir görsel gönderip vision desteğini sınar.
+
+    Ana model (primary) için de kullanılabilir; `llm_vision_supported` ayarını
+    doğrulamak amacıyla iki kartta da ayrı buton bulunur.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    params, error = _prepare_llm_test(body)
+    if error:
+        return error
+    return await _run_llm_probe(params, image_url=_test_image_data_url())
 
 
 # --- 3. USERS ENDPOINTS ---
