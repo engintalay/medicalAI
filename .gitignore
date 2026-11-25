@@ -47,5 +47,7 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Uploads (optional - change if you want to track uploads)
-# uploads/
+# Çalışma zamanı verileri (hasta dosyaları, loglar, yedekler) asla commit edilmez
+uploads/
+logs/
+backups/

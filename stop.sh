@@ -1,57 +1,48 @@
 #!/bin/bash
-# stop.sh - Medical AI Uygulamasını Durdurur
+# stop.sh - Uygulamayı PID dosyasıyla durdurur; artık process/port varsa temizler.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "--- 🛑 Medical AI Uygulamasını Durduruyor ---"
+echo "--- 🛑 Medical AI Uygulaması Durduruluyor ---"
 
-# PID dosyasını kontrol et
 PID_FILE="$SCRIPT_DIR/venv/pidfile"
+PORT="${PORT:-8000}"
 
 if [ -f "$PID_FILE" ]; then
-    # PID dosyasını oku ve process'i durdur
-    PID=$(cat "$PID_FILE")
-    echo "[STEP 1/2] PID dosyası bulundu: $PID"
-    
-    # Process'i durdur
-    if kill -0 "$PID" 2>/dev/null; then
-        echo "[STEP 2/2] Process'i durduruyor..."
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "[STEP 1/3] PID $PID durduruluyor..."
         kill "$PID" 2>/dev/null
-        sleep 2
-    else
-        echo "[STEP 2/2] Process zaten durdu. PID dosyasını temizliyorum..."
-    fi
-    
-    # PID dosyasını temizle
-    rm -f "$PID_FILE"
-    echo "✅ PID dosyası temizlendi."
-    
-    # Belki pkill ile de kontrol et (garanti için)
-    pkill -f "uvicorn.*app:app" 2>/dev/null
-    echo "✅ Uvicorn process'leri temizlendi."
-    
-else
-    # PID dosyası yoksa, process'i bul ve durdur
-    echo "[STEP 1/2] PID dosyası bulunamadı. Process'leri arıyoruz..."
-    
-    # uvicorn process'lerini bul
-    UVICORN_PIDS=$(pgrep -f "uvicorn.*app:app" 2>/dev/null)
-    
-    if [ -n "$UVICORN_PIDS" ]; then
-        echo "[STEP 2/2] Process'leri durduruyor..."
-        echo "$UVICORN_PIDS" | while read PID; do
-            kill "$PID" 2>/dev/null
-            echo "  - Durduruldu: PID $PID"
+        for _ in $(seq 1 10); do
+            kill -0 "$PID" 2>/dev/null || break
+            sleep 0.5
         done
-        
-        echo "✅ Tüm uvicorn process'leri durduruldu."
-    else
-        echo "✅ Uvicorn process'leri bulunamadı. Uygulama zaten kapalı olabilir."
+        kill -9 "$PID" 2>/dev/null || true
     fi
+    rm -f "$PID_FILE"
 fi
 
-echo ""
-echo "========================================"
-echo "  Durdurma işlemi tamamlandı!"
-echo "========================================"
+# PID dosyası yoksa/bozuksa uvicorn process'lerini bul.
+LEFT=$(pgrep -f "uvicorn.*app:app" 2>/dev/null || true)
+if [ -n "$LEFT" ]; then
+    echo "[STEP 2/3] Kalan uvicorn process'leri temizleniyor..."
+    echo "$LEFT" | while read -r PID; do
+        [ "$PID" = "$$" ] && continue
+        kill "$PID" 2>/dev/null || true
+    done
+fi
+
+# Port hâlâ doluysa serbest bırak (fuser varsa).
+if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${PORT}/tcp" >/dev/null 2>&1 || true
+fi
+
+echo "[STEP 3/3] Doğrulama..."
+if command -v fuser >/dev/null 2>&1 && fuser "${PORT}/tcp" >/dev/null 2>&1; then
+    echo "⚠️ Port $PORT hâlâ kullanımda."
+    exit 1
+fi
+
+echo "✅ Durdurma işlemi tamamlandı."
+exit 0

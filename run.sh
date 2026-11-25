@@ -1,43 +1,67 @@
 #!/bin/bash
-# run.sh - Medical AI Projesini Başlatır
-# http://localhost:8000 adresinde çalışır
-# Admin panel: http://localhost:8000/admin
+# run.sh - Medical AI uygulamasını arka planda başlatır (http://localhost:8000)
+# PID: venv/pidfile · Log: logs/app.log (gizli değer yazılmaz)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "--- 🚀 Medical AI Uygulaması Başlatılıyor ---"
 
-# 1. Sanal ortamı kontrol et ve gerekirse aktifleştir
-if [ ! -d "venv" ]; then
-    echo "[STEP 1/3] Sanal ortam (venv) kontrol ediliyor..."
-    python3 -m venv venv
-    echo "✅ venv oluşturuldu."
+PID_FILE="$SCRIPT_DIR/venv/pidfile"
+PORT="${PORT:-8000}"
+
+if [ -f "$PID_FILE" ]; then
+    OLD_PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+        echo "✅ Uygulama zaten çalışıyor (PID $OLD_PID): http://localhost:$PORT"
+        exit 0
+    fi
+    rm -f "$PID_FILE"
 fi
 
-# 2. Ortamı aktifleştir
-echo "[STEP 2/3] Ortam aktifleştiriliyor..."
-source venv/bin/activate
+if [ ! -d "venv" ]; then
+    echo "[STEP 1/3] Sanal ortam oluşturuluyor..."
+    python3 -m venv venv || exit 1
+fi
 
-# 3. Uygulamayı başlat
-echo "[STEP 3/3] Uygulama başlatılıyor..."
-echo ""
-echo "========================================"
-echo "  Medical AI Uygulaması çalışıyor!"
-echo "  API: http://localhost:8000"
-echo "  Admin Panel: http://localhost:8000/admin"
-echo "  Default Admin: admin@medicalai.com / changeme123"
-echo "========================================"
-echo ""
+mkdir -p logs
 
-# 4. Uygulamayı başlat (background'da veya foreground'da)
-# Foreground: Direkt bu scriptin içinde çalışır
-uvicorn app:app --host 0.0.0.0 --port 8000
+if [ -x "venv/bin/uvicorn" ]; then
+    SERVER=(venv/bin/uvicorn app:app --host 0.0.0.0 --port "$PORT")
+else
+    # venv bağımlılıkları kurulmamışsa sistem Python'unu kullan (install.sh önerilir).
+    SERVER=(python3 -m uvicorn app:app --host 0.0.0.0 --port "$PORT")
+fi
 
-# Uygulama bittiğinde pidfile'i temizle
-rm -f venv/pidfile 2>/dev/null
+nohup "${SERVER[@]}" >> logs/app.log 2>&1 &
+PID=$!
+echo "$PID" > "$PID_FILE"
 
-echo ""
+echo "[STEP 2/3] PID dosyası yazıldı: $PID"
+echo "[STEP 3/3] /health kontrol ediliyor..."
+
+OK=0
+for _ in $(seq 1 20); do
+    if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+        OK=1
+        break
+    fi
+    if ! kill -0 "$PID" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+done
+
 echo "========================================"
-echo "  Uygulama durdu. Durdurma işlemi tamamlandı."
+echo "  API: http://localhost:$PORT"
+echo "  Admin Panel: http://localhost:$PORT/admin"
+echo "  Health: http://localhost:$PORT/health"
 echo "========================================"
+
+if [ "$OK" -eq 1 ]; then
+    echo "✅ Uygulama hazır (PID $PID)."
+    exit 0
+fi
+
+echo "⚠️ Uygulama başladı ancak /health yanıt vermedi. Log: logs/app.log"
+exit 1

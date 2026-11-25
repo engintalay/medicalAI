@@ -11,10 +11,11 @@
 
 **Faz 0**, sistemin yönetimsel temel altyapısını oluşturmak için tasarlanmış kapsamlı bir aşamadır. Bu faz, **PostgreSQL**, **Redis**, **LLM parametreleri** gibi kritik ayarların yönetimini, **JWT** tabanlı güvenli giriş mekanizmasını ve **modern HTML/JS** tabanlı admin arayüzünü içerir.
 
-### **Konfigürasyon Hiyerarşisi (Yeni Mimari)**
+### **Konfigürasyon Kaynakları**
 ```
-ENV (En Yüksek) > .env > system_config tablosu (En Düşük)
+Bootstrap: ENV > .env        ·        Çalışma zamanı: system_config tablosu (hot reload)
 ```
+Ayrıntı ve gerekçe için dosyanın sonundaki "Güncel Durum" bölümüne bakın.
 
 **Ana Özellikler:**
 - ✅ **DB/Redis Bağlantıları**: Altyapı tarafından (ENV ile) sağlanır
@@ -295,3 +296,86 @@ sudo systemctl status medical-ai
 ---
 
 *Bu rapor, Faz 0'un son durumunu ve sistemin tam olarak çalıştığını doğrulayan bir özetir.*
+
+
+---
+
+# 🩺 Güncel Durum (Faz 0 + Faz 1–8, 25 Kasım 2026)
+
+> Aşağıdaki bölüm Faz 0 raporunu günceller; 14 parçalı uygulama planındaki
+> **01–13** maddelerinin son durumunu ve operasyon prosedürlerini içerir.
+
+## 1. Parça durumu
+
+| Parça | Konu | Durum |
+|---|---|---|
+| 01 | Ortak sözleşmeler (alias'lar, hata biçimi, embedding) | ✅ |
+| 02 | Bootstrap & config (Postgres/Redis config'den) | ✅ |
+| 03 | Hasta/admin JWT, rol ayrımı, profil | ✅ |
+| 04 | Dosya yükleme (user_id izolasyonu) | ✅ |
+| 05 | Vision/metin çıkarma (LLM) | ✅ |
+| 06 | RAG ingestion — chunking + yerel Sentence-Transformers | ✅ |
+| 07 | RAG retrieval + `/api/chat` + çok turlu sohbet | ✅ |
+| 08 | Hasta dashboard + CSV/PDF export | ✅ |
+| 09 | Hatırlatmalar + bildirim tercihleri | ✅ |
+| 10 | Admin SPA (health linki geri eklendi) | ✅ |
+| 11 | Güvenlik/operasyon/deployment | ✅ |
+| 12 | QA/test matrisi + Postman collection | ✅ |
+| 13 | Public research ingestion + admin içerik yönetimi | ✅ |
+
+## 2. Konfigürasyon kaynağı (netleştirme)
+
+- **Bootstrap**: Postgres ve Redis uç noktaları `.env`/ENV ile okunur (`config/loader.py`).
+- **Çalışma zamanı**: `system_config` tablosu cache'i yazar; `ConfigLoader.get()` bu cache'i
+  kullanır. Redis istemcisi `load_all()` sonrasında **config'deki** `redis_host`, `redis_port`,
+  `redis_password`, `redis_username` değerleriyle yeniden bağlanır.
+- `ConfigLoader.set()` hot reload sağlar; `redis_*` anahtarları değiştiğinde bağlantı yenilenir.
+- Gizli anahtarlar listeleme ve `/admin/api/utils/secret/{key}` yanıtlarında **maskelenir**;
+  hiçbir API yanıtı ham şifre/API anahtarı döndürmez.
+- Embedding: yerel `sentence-transformers`, CPU, JSONB vektör (pgvector yok). `/embeddings`
+  API çağrısı yapılmaz. Varsayılan model config'de
+  `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`'dir.
+
+## 3. API özeti
+
+- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics`,
+  `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/chat`,
+  `/api/conversations`, `/api/reminders`, `/api/notifications`,
+  `/api/user/notification-preferences`, `/api/research` (admin token).
+- Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
+  `/admin/api/users`, `/admin/api/monitoring`, `/admin/api/uploads/stats`,
+  `/admin/api/health/*`, `/admin/api/research`, `/admin/api/utils/secret/{key}`.
+- Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
+
+## 4. Operasyon prosedürleri
+
+```bash
+./install.sh                       # venv + requirements
+./run.sh                           # arka planda uvicorn, venv/pidfile, logs/app.log
+./restart.sh                       # stop + start + /health doğrulaması
+./stop.sh                          # PID/port temizliği
+./backup.sh                        # backups/medicalai-<ts>.tar.gz (pg_dump + config dump, 0600)
+./restore.sh backups/<dosya>.tar.gz # pg_restore + init_db + /health
+python database/init_db.py         # idempotent şema/seed (ON CONFLICT DO NOTHING)
+python -m pytest tests -q          # tüm sözleşme/regresyon testleri
+```
+
+- Yedek dosyaları `system_config` içerdiği için gizlidir (0600); asla commit edilmez.
+- Restore sonrası `GET /health` 200 dönmelidir.
+- Loglara istek gövdesi, Bearer token veya API anahtarı yazılmaz.
+
+## 5. Tıbbi güvenlik
+
+- `/api/chat` yanıtına her durumda guardrail eklenir:
+  "Bu bilgi tanı yerine geçmez; doktorunuza danışın."
+- Prompt'ta yalnızca RAG kayıtları bağlam olarak kullanılır; eksik bilgi uydurulmaz.
+- Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
+  özel RAG parçaları) daima JWT'deki `user_id` ile filtrelenir.
+- Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
+
+## 6. Test
+
+- `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
+- Kabul/regresyon: 51 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+  LLM anahtarının kaydedilmemesi, logout kara listesi).
+- Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
