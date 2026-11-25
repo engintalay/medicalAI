@@ -354,13 +354,15 @@ sudo systemctl status medical-ai
 ./run.sh                           # arka planda uvicorn, venv/pidfile, logs/app.log
 ./restart.sh                       # stop + start + /health doğrulaması
 ./stop.sh                          # PID/port temizliği
-./backup.sh                        # backups/medicalai-<ts>.tar.gz (pg_dump + config dump, 0600)
+./backup.sh                        # backups/medicalai-<ts>.tar.gz (pg_dump varsa; yoksa JSON yedek, 0600)
 ./restore.sh backups/<dosya>.tar.gz # pg_restore + init_db + /health
 python database/init_db.py         # idempotent şema/seed (ON CONFLICT DO NOTHING)
 python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ```
 
 - Yedek dosyaları `system_config` içerdiği için gizlidir (0600); asla commit edilmez.
+- `pg_dump`/`pg_restore` kurulu değilse `database/backup.py` JSON mantıksal yedek kullanılır
+  (şema+veri, FK sıralı geri yükleme); 175 satırlık yedek geçici şemada doğrulandı.
 - Restore sonrası `GET /health` 200 dönmelidir.
 - Loglara istek gövdesi, Bearer token veya API anahtarı yazılmaz.
 

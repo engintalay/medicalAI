@@ -33,6 +33,18 @@ def test_logs_have_no_tokens_or_keys():
     assert "api_key=" not in text
 
 
+def test_json_backup_contains_config(tmp_path):
+    import json
+    from database.backup import dump
+
+    path = tmp_path / "dump.json"
+    rows = dump(str(path))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["format"] == "medicalai-json-v1"
+    assert "system_config" in payload["tables"]
+    assert rows >= len(payload["tables"]["system_config"]["rows"])
+
+
 def test_deployment_scripts_valid():
     import subprocess
     for name in ("install.sh", "run.sh", "restart.sh", "stop.sh", "backup.sh", "restore.sh"):

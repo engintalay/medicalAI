@@ -1,6 +1,7 @@
 #!/bin/bash
 # restore.sh - backup.sh çıktısından geri yükleme + idempotent init_db + /health doğrulaması
 # Kullanım: ./restore.sh backups/medicalai-20261125-120000.tar.gz
+# uyarı: yıkıcı işlem; mevcut veri yedekten gelen veriyle değiştirilir.
 
 set -euo pipefail
 
@@ -30,7 +31,10 @@ DB_NAME="${DB_NAME:-medical_ai}"
 DB_USER="${DB_USER:-medical_user}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 
-command -v pg_restore >/dev/null 2>&1 || { echo "❌ pg_restore bulunamadı."; exit 1; }
+if [ -t 0 ] && [ "${RESTORE_CONFIRM:-}" != "yes" ]; then
+    read -r -p "Mevcut veriler silinecek. Devam etmek için 'evet' yazın: " CONFIRM
+    [ "$CONFIRM" = "evet" ] || { echo "İptal edildi."; exit 1; }
+fi
 
 TMP_DIR=$(mktemp -d "$SCRIPT_DIR/backups/.restore.XXXXXX")
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -38,15 +42,22 @@ chmod 700 "$TMP_DIR"
 
 echo "--- ♻️ Geri yükleme: $ARCHIVE ---"
 tar -xzf "$ARCHIVE" -C "$TMP_DIR"
+
 DUMP=$(find "$TMP_DIR" -name '*.dump' -print -quit)
-if [ -z "$DUMP" ]; then
-    echo "❌ Yedekte .dump dosyası yok."
+JSON_DUMP=$(find "$TMP_DIR" -name '*.json' -print -quit)
+
+if [ -n "$DUMP" ] && command -v pg_restore >/dev/null 2>&1; then
+    PGPASSWORD="$DB_PASSWORD" pg_restore \
+        --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
+        --clean --if-exists --no-owner --no-acl --exit-on-error "$DUMP"
+    echo "✅ pg_restore tamamlandı."
+elif [ -n "$JSON_DUMP" ]; then
+    echo "ℹ️ JSON yedek geri yükleniyor..."
+    PYTHONPATH="$SCRIPT_DIR" python3 database/backup.py restore "$JSON_DUMP"
+else
+    echo "❌ Yedekte geri yüklenebilir dosya (.dump veya .json) yok."
     exit 1
 fi
-
-PGPASSWORD="$DB_PASSWORD" pg_restore \
-    --host "$DB_HOST" --port "$DB_PORT" --username "$DB_USER" --dbname "$DB_NAME" \
-    --clean --if-exists --no-owner --no-acl --exit-on-error "$DUMP"
 
 echo "✅ Veritabanı geri yüklendi. Şema doğrulanıyor..."
 python3 database/init_db.py
