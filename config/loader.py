@@ -26,6 +26,10 @@ class ConfigLoader:
     def __init__(self):
         """
         ConfigLoader'ı başlatır. Redis bağlantısını dener ve ilk yüklemeyi yapar.
+
+        Bootstrap için DB/Redis adresleri .env'den okunur; gerçek kaynak
+        `system_config` tablosudur. load_all() sonrası Redis bağlantısı
+        config değerleriyle yeniden kurulur (hot reload destekli).
         """
         # Çevre değişkenlerinden DB ve Redis bağlantı detaylarını alır (.env'den yüklenir).
         self._db_host = os.getenv("DB_HOST", "localhost")
@@ -34,28 +38,69 @@ class ConfigLoader:
         self._db_user = os.getenv("DB_USER", "medical_user")
         self._db_password = os.getenv("DB_PASSWORD", "")
 
-        # Redis bağlantısını dener (şifre destekli)
-        try:
-            redis_password = os.getenv("REDIS_PASSWORD") or None
-            redis_username = os.getenv("REDIS_USERNAME") or None
-            self._redis = redis.Redis(
-                host=os.getenv("REDIS_HOST", "localhost"),
-                port=int(os.getenv("REDIS_PORT", "6379")),
-                password=redis_password,
-                username=redis_username,
-                decode_responses=True,
-            )
-            self._redis.ping()
-            print("✅ Redis Bağlantısı Başarıyla Kuruldu.")
-        except Exception as e:
-            print(f"⚠️ Redis Bağlantı Hatası: {e}. Redis cache kullanılamayacak, sadece bellekte kalacak.")
-            self._redis = None
-
         self._cache: Dict[str, Any] = {}
+        self._redis = None
+        self._redis_params = None
         # .env değerlerini fallback olarak cache'e koy (DB erişilemezse de config çalışsın)
         self._seed_from_env()
+        self._connect_redis_from_config(announce=True)
         self.load_all()
+        # system_config değerleri .env fallback'ini ezdiyse Redis'i yeniden bağla.
+        self._connect_redis_from_config(announce=False)
         print("✅ ConfigLoader başlatıldı ve tüm ayarlar belleğe yüklendi.")
+
+    def _redis_config(self) -> dict:
+        """Redis ayarlarını config cache'inden (fallback: .env) okur."""
+        def port_value(value, default):
+            try:
+                return int(value or default)
+            except (TypeError, ValueError):
+                return int(default)
+
+        return {
+            "host": str(self.get("redis_host") or os.getenv("REDIS_HOST", "localhost")),
+            "port": port_value(self.get("redis_port"), 6379),
+            "password": self.get("redis_password") or os.getenv("REDIS_PASSWORD") or None,
+            "username": self.get("redis_username") or os.getenv("REDIS_USERNAME") or None,
+        }
+
+    def _connect_redis_from_config(self, announce: bool = True) -> bool:
+        """Config'deki Redis uç noktasına bağlanır; değişmediyse yeniden bağlanmaz."""
+        params = self._redis_config()
+        if self._redis is not None and params == self._redis_params:
+            return True
+        old = self._redis
+        try:
+            client = redis.Redis(
+                host=params["host"],
+                port=params["port"],
+                password=params["password"],
+                username=params["username"],
+                socket_connect_timeout=5,
+                decode_responses=True,
+            )
+            client.ping()
+        except Exception as exc:
+            # Hata mesajına şifre/token yazılmaz; yalnızca uç nokta adı görünür.
+            print(f"⚠️ Redis Bağlantı Hatası ({params['host']}:{params['port']}): {exc}. Bellek cache kullanılacak.")
+            if old is not None:
+                try:
+                    old.close()
+                except Exception:
+                    pass
+            self._redis = None
+            self._redis_params = None
+            return False
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+        self._redis = client
+        self._redis_params = params
+        if announce:
+            print(f"✅ Redis Bağlantısı Başarıyla Kuruldu ({params['host']}:{params['port']}).")
+        return True
 
     def _seed_from_env(self):
         """DB/Redis erişilemezse kullanılacak fallback değerleri .env'den yükler."""
@@ -67,6 +112,8 @@ class ConfigLoader:
             "db_password": self._db_password,
             "redis_host": os.getenv("REDIS_HOST", "localhost"),
             "redis_port": os.getenv("REDIS_PORT", "6379"),
+            "redis_password": os.getenv("REDIS_PASSWORD", ""),
+            "redis_username": os.getenv("REDIS_USERNAME", ""),
             "jwt_secret": os.getenv("JWT_SECRET", "medical_ai_default_secret_2026"),
             "llm_api_key": os.getenv("LLM_API_KEY", ""),
             "llm_model": os.getenv("LLM_MODEL", ""),
@@ -78,7 +125,7 @@ class ConfigLoader:
             "vision_llm_model": os.getenv("VISION_LLM_MODEL", ""),
             "vision_llm_api_key": os.getenv("VISION_LLM_API_KEY", ""),
             "vision_llm_base_url": os.getenv("VISION_LLM_BASE_URL", ""),
-            "embedding_model": os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
+            "embedding_model": os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"),
             "rag_top_k": os.getenv("RAG_TOP_K", "5"),
             "rag_chunk_size": os.getenv("RAG_CHUNK_SIZE", "500"),
             "rag_overlap": os.getenv("RAG_OVERLAP", "100"),
@@ -124,6 +171,17 @@ class ConfigLoader:
         """Belirli bir config değerini getter fonksiyonu."""
         return self._cache.get(key, default)
 
+    def connect_db(self):
+        """Config'den okunanPostgreSQL bağlantısını açar (servisler için ortak nokta)."""
+        return psycopg2.connect(
+            host=self.get("db_host", "localhost"),
+            port=int(self.get("db_port", "5432") or 5432),
+            dbname=self.get("db_name", "medical_ai"),
+            user=self.get("db_user", "medical_user"),
+            password=self.get("db_password", "") or "",
+            connect_timeout=10,
+        )
+
     def set(self, key: str, value: Any):
         """
         Bir config değerini bellek ve Redis cache'ine anında yazar.
@@ -155,6 +213,10 @@ class ConfigLoader:
         elif key == "db_password":
             self._db_password = value
 
+        # Redis uç noktası/şifresi değiştiyse bağlantıyı config'den yenile.
+        if key.startswith("redis_"):
+            self._connect_redis_from_config(announce=False)
+
         print(f"🔄 Config '{key}' güncellendi.")
 
     def invalidate(self, key: Optional[str] = None):
@@ -168,6 +230,19 @@ class ConfigLoader:
             # 2. Redis'i temizle
             if self._redis:
                 self._redis.delete(f"config:{key}")
+            # 3. Redis bağlantı ayarıysa system_config'den tekrar oku
+            if key.startswith("redis_"):
+                try:
+                    conn = self.connect_db()
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT value FROM system_config WHERE key = %s", (key,))
+                        row = cur.fetchone()
+                    conn.close()
+                    if row:
+                        self._cache[key] = row[0]
+                except Exception:
+                    pass
+                self._connect_redis_from_config(announce=False)
             print(f"🔄 Config '{key}' başarıyla geçersiz kılındı (Invalidated).")
         else:
             # Tamamen temizle

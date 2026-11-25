@@ -1168,37 +1168,50 @@ async def get_upload_stats(request: Request):
 
 # --- 7. UTILS ENDPOINTS ---
 
-@admin_router.get("/utils/secret/{key}", summary="Secret Key Getir")
+@admin_router.get("/utils/secret/{key}", summary="Secret Key Durumu")
 async def get_secret(key: str):
     """
-    Config'deki secret key'leri getirir.
-    
-    Args:
-        key: Secret key adı (jwt_secret, db_password, vb.)
+    Secret'ın var olup olmadığını ve maskelenmiş değerini döner.
+
+    Güvenlik kuralı (11): gizli değer hiçbir API yanıtında düz metin dönmez.
+    Cache (hot reload) birincil kaynaktır; DB yalnızca fallback'dir.
     """
-    conn = psycopg2.connect(
-        host=_config.get('db_host', 'localhost'),
-        port=int(_config.get('db_port', '5432')),
-        dbname=_config.get('db_name', 'medical_ai'),
-        user=_config.get('db_user', 'medical_user'),
-        password=_config.get('db_password', '')
-    )
-    cur = conn.cursor()
-    
-    cur.execute("""
-        SELECT value 
-        FROM system_config 
-        WHERE key = %s
-    """, (key,))
-    
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    
-    if not row:
+    value = _config.get(key)
+    if value is None:
+        conn = None
+        try:
+            conn = psycopg2.connect(
+                host=_config.get('db_host', 'localhost'),
+                port=int(_config.get('db_port', '5432')),
+                dbname=_config.get('db_name', 'medical_ai'),
+                user=_config.get('db_user', 'medical_user'),
+                password=_config.get('db_password', ''),
+            )
+            with conn.cursor() as cur:
+                cur.execute("SELECT value FROM system_config WHERE key = %s", (key,))
+                row = cur.fetchone()
+            if row:
+                value = row[0]
+                _config.set(key, value)
+        except Exception:
+            value = None
+        finally:
+            if conn:
+                conn.close()
+
+    if value is None:
         return JSONResponse(status_code=404, content={'success': False, 'error': f'{key} bulunamadı'})
-    
-    return JSONResponse(status_code=200, content={'success': True, 'data': row[0]})
+
+    is_secret = key in SECRET_KEYS
+    return JSONResponse(status_code=200, content={
+        'success': True,
+        'data': {
+            'key': key,
+            'is_secret': is_secret,
+            'has_value': bool(value),
+            'value': _mask_secret(str(value)) if is_secret else str(value),
+        },
+    })
 
 
 # --- 8. BAĞLANTI TEST ENDPOINT'LERİ ---

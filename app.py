@@ -14,6 +14,11 @@ from config.auth_service import auth_service
 from routes import admin as admin_routes
 from routes.auth import router as patient_auth_router
 from routes.uploads import router as uploads_router
+from routes.rag import router as rag_router
+from routes.chat import router as chat_router
+from routes.user import router as user_router
+from routes.notifications import router as notifications_router
+from routes.research import router as research_router
 from routes.admin import health_router
 
 # --- FastAPI App ---
@@ -68,7 +73,8 @@ async def admin_api_auth_guard(request: Request, call_next):
 @app.middleware("http")
 async def patient_api_auth_guard(request: Request, call_next):
     path = request.url.path
-    public_paths = ("/api/auth/login", "/api/auth/register")
+    # /api/research admin token ile çağrılır (13 parçası); kendi içinde doğrular.
+    public_paths = ("/api/auth/login", "/api/auth/register", "/api/research")
     if path.startswith("/api") and path not in public_paths:
         auth_header = request.headers.get("Authorization", "")
         if not auth_header.startswith("Bearer "):
@@ -106,6 +112,11 @@ async def patient_api_auth_guard(request: Request, call_next):
 # --- API Routes ---
 app.include_router(patient_auth_router)
 app.include_router(uploads_router)
+app.include_router(rag_router)
+app.include_router(chat_router)
+app.include_router(user_router)
+app.include_router(notifications_router)
+app.include_router(research_router)
 app.include_router(admin_routes.admin_router)
 app.include_router(health_router)
 

@@ -137,10 +137,69 @@ def main() -> int:
         );
     """)
 
+    # --- 07: çok turlu sohbet ---
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            conversation_id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            title VARCHAR(200),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_messages (
+            message_id SERIAL PRIMARY KEY,
+            conversation_id INTEGER NOT NULL
+                REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+            role VARCHAR(10) NOT NULL CHECK (role IN ('user', 'assistant')),
+            content TEXT NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # --- 09: hatırlatmalar ve bildirim tercihleri ---
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            reminder_id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            type VARCHAR(20) NOT NULL
+                CHECK (type IN ('medication', 'checkup', 'lab', 'other')),
+            title VARCHAR(200) NOT NULL,
+            due_date TIMESTAMP WITH TIME ZONE NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS notification_preferences (
+            user_id INTEGER PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            email_enabled BOOLEAN DEFAULT TRUE,
+            push_enabled BOOLEAN DEFAULT FALSE,
+            quiet_hours VARCHAR(50),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # --- 13: research_data alanları (mevcut DB'ler için idempotent migration) ---
+    cur.execute("ALTER TABLE research_data ADD COLUMN IF NOT EXISTS title VARCHAR(255);")
+    cur.execute("ALTER TABLE research_data ADD COLUMN IF NOT EXISTS url VARCHAR(500);")
+    cur.execute(
+        "ALTER TABLE research_data ADD COLUMN IF NOT EXISTS created_at "
+        "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;"
+    )
+    cur.execute(
+        "ALTER TABLE research_data ADD COLUMN IF NOT EXISTS updated_at "
+        "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;"
+    )
+
     # --- Index'ler ---
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_rag_user_id ON rag_documents (user_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_metrics_user_id ON health_metrics (user_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_conv_user_id ON conversations (user_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_msg_conversation_id ON conversation_messages (conversation_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders (user_id);")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_research_url ON research_data (url) WHERE url IS NOT NULL;")
     if pgvector:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_rag_content_vector "

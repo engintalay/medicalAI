@@ -1,0 +1,301 @@
+# routes/user.py — 08 parçası: hasta dashboard verisi + CSV/PDF export
+#
+# Tüm sorgular JWT'deki user_id ile filtrelenir; veri yoksa boş liste döner.
+
+import csv
+import io
+from datetime import date, datetime
+from decimal import Decimal
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse as _FastJSONResponse, Response
+from pydantic import BaseModel
+
+from config.loader import get_config_loader
+from routes.auth import require_patient
+
+router = APIRouter()
+_config = get_config_loader()
+
+
+class JSONResponse(_FastJSONResponse):
+    def render(self, content):
+        return super().render(jsonable_encoder(content))
+
+
+class MetricRequest(BaseModel):
+    name: str
+    value: float
+    unit: str | None = None
+
+
+def _json_value(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
+def _profile(conn, user_id: int) -> dict:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT full_name, height_cm, weight_kg, birth_year, city "
+            "FROM users WHERE user_id = %s",
+            (user_id,),
+        )
+        row = cur.fetchone() or (None,) * 5
+    return {
+        "full_name": row[0] or "",
+        "height_cm": _json_value(row[1]),
+        "weight_kg": _json_value(row[2]),
+        "birth_year": row[3],
+        "city": row[4] or "",
+    }
+
+
+def _weight_trend(conn, user_id: int) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT recorded_at, value FROM health_metrics "
+            "WHERE user_id = %s AND metric_name ILIKE 'weight%%' "
+            "ORDER BY recorded_at ASC LIMIT 30",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {"date": _json_value(r[0]), "value": _json_value(r[1])}
+        for r in rows
+    ]
+
+
+def _metric_history(conn, user_id: int) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT metric_name, value, unit, recorded_at FROM health_metrics "
+            "WHERE user_id = %s ORDER BY recorded_at DESC LIMIT 200",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "name": r[0],
+            "value": _json_value(r[1]),
+            "unit": r[2] or "",
+            "date": _json_value(r[3]),
+        }
+        for r in rows
+    ]
+
+
+def _uploads(conn, user_id: int) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT original_name, upload_date, size_bytes FROM user_uploads "
+            "WHERE user_id = %s ORDER BY upload_date DESC LIMIT 200",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {"name": r[0], "date": _json_value(r[1]), "size": r[2] or 0}
+        for r in rows
+    ]
+
+
+def _reminders(conn, user_id: int) -> list:
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT type, title, due_date FROM reminders "
+                "WHERE user_id = %s AND is_active = TRUE ORDER BY due_date ASC",
+                (user_id,),
+            )
+            rows = cur.fetchall()
+        return [
+            {"type": r[0], "title": r[1], "due_date": _json_value(r[2])}
+            for r in rows
+        ]
+    except Exception:
+        # 09 parçası tablosu henüz yoksa dashboard yine de çalışır.
+        return []
+
+
+def _collect(conn, user_id: int) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM user_uploads WHERE user_id = %s", (user_id,))
+        upload_count = int(cur.fetchone()[0] or 0)
+    return {
+        "profile": _profile(conn, user_id),
+        "weight_trend": _weight_trend(conn, user_id),
+        "upload_count": upload_count,
+        "reminders": _reminders(conn, user_id),
+        "metrics": _metric_history(conn, user_id),
+        "uploads": _uploads(conn, user_id),
+    }
+
+
+@router.get("/api/user/dashboard", summary="Hasta Dashboard Özeti")
+async def patient_dashboard(user: dict = Depends(require_patient)):
+    conn = None
+    try:
+        conn = _config.connect_db()
+        data = _collect(conn, int(user["user_id"]))
+        return JSONResponse(status_code=200, content={"success": True, "data": data})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.post("/api/user/metrics", summary="Sağlık Metriği Ekle")
+async def add_metric(body: MetricRequest, user: dict = Depends(require_patient)):
+    if not (body.name or "").strip():
+        return JSONResponse(status_code=400, content={"success": False, "error": "Metrik adı boş olamaz."})
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO health_metrics (user_id, metric_name, value, unit) "
+                "VALUES (%s, %s, %s, %s) RETURNING metric_id",
+                (int(user["user_id"]), body.name.strip(), body.value, body.unit),
+            )
+            metric_id = cur.fetchone()[0]
+        conn.commit()
+        return JSONResponse(status_code=201, content={"success": True, "data": {"id": metric_id}})
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
+def _pdf_font() -> str:
+    """Türkçe karakterleri destekleyen bir font kaydeder; yoksa Helvetica."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+
+        candidates = [
+            "/usr/share/fonts/adwaita-sans-fonts/AdwaitaSans-Regular.ttf",
+            "/usr/share/fonts/google-carlito-fonts/Carlito-Regular.ttf",
+            "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        ]
+        for path in candidates:
+            if Path(path).exists():
+                pdfmetrics.registerFont(TTFont("MedicalAiTurkish", path))
+                return "MedicalAiTurkish"
+    except Exception:
+        pass
+    return "Helvetica"
+
+
+def _build_pdf(data: dict) -> bytes:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
+    font = _pdf_font()
+    styles = getSampleStyleSheet()
+    normal = styles["Normal"]
+    normal.fontName = font
+    title = styles["Title"]
+    title.fontName = font
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, title="Medical AI Raporu")
+    story = [Paragraph("Medical AI - Kişisel Sağlık Raporu", title), Spacer(1, 12)]
+
+    profile = data["profile"]
+    story.append(Paragraph("<b>Profil</b>", normal))
+    story.append(Paragraph(
+        f"Ad: {profile['full_name']} · Boy: {profile['height_cm'] or '-'} cm · "
+        f"Kilo: {profile['weight_kg'] or '-'} kg · Doğum yılı: {profile['birth_year'] or '-'} · "
+        f"Şehir: {profile['city'] or '-'}",
+        normal,
+    ))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Sağlık Metrikleri</b>", normal))
+    if data["metrics"]:
+        for item in data["metrics"][:60]:
+            story.append(Paragraph(
+                f"{item['date']} — {item['name']}: {item['value']} {item['unit']}", normal
+            ))
+    else:
+        story.append(Paragraph("Kayıt yok.", normal))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Dosyalar</b>", normal))
+    if data["uploads"]:
+        for item in data["uploads"][:60]:
+            story.append(Paragraph(f"{item['date']} — {item['name']} ({item['size']} bayt)", normal))
+    else:
+        story.append(Paragraph("Kayıt yok.", normal))
+    story.append(Spacer(1, 10))
+
+    story.append(Paragraph("<b>Hatırlatmalar</b>", normal))
+    if data["reminders"]:
+        for item in data["reminders"]:
+            story.append(Paragraph(f"{item['due_date']} — {item['title']} ({item['type']})", normal))
+    else:
+        story.append(Paragraph("Kayıt yok.", normal))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Bu bilgi tanı yerine geçmez; doktorunuza danışın.", normal))
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def _build_csv(data: dict) -> bytes:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["Bölüm", "Alan", "Değer"])
+    profile = data["profile"]
+    for key, label in (
+        ("full_name", "Ad Soyad"), ("height_cm", "Boy (cm)"),
+        ("weight_kg", "Kilo (kg)"), ("birth_year", "Doğum Yılı"), ("city", "Şehir"),
+    ):
+        writer.writerow(["Profil", label, profile.get(key) or ""])
+    for item in data["metrics"]:
+        writer.writerow(["Sağlık Metrikleri", f"{item['name']} ({item['unit']}) {item['date']}", item["value"]])
+    for item in data["uploads"]:
+        writer.writerow(["Dosyalar", item["date"], item["name"]])
+    for item in data["reminders"]:
+        writer.writerow(["Hatırlatmalar", item["due_date"], f"{item['type']}: {item['title']}"])
+    return ("\ufeff" + buffer.getvalue()).encode("utf-8")
+
+
+@router.get("/api/user/export", summary="Veri Export (CSV/PDF)")
+async def export_data(
+    format: str = Query("csv"),
+    user: dict = Depends(require_patient),
+):
+    fmt = (format or "").strip().lower()
+    if fmt not in ("csv", "pdf"):
+        return JSONResponse(status_code=400, content={"success": False, "error": "Desteklenmeyen format."})
+    user_id = int(user["user_id"])
+    conn = None
+    try:
+        conn = _config.connect_db()
+        data = _collect(conn, user_id)
+        if fmt == "csv":
+            return Response(
+                content=_build_csv(data),
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="medicalai-rapor-{user_id}.csv"'},
+            )
+        return Response(
+            content=_build_pdf(data),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="medicalai-rapor-{user_id}.pdf"'},
+        )
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
