@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="tr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical AI · Hasta Paneli</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/admin.css">
+    <link rel="stylesheet" href="/static/patient.css">
+</head>
+<body>
+    <div class="app">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-logo">🩺</div>
+                <div class="brand-text">
+                    <div class="brand-name">Medical AI</div>
+                    <div class="brand-sub">Hasta Paneli</div>
+                </div>
+            </div>
+
+            <nav class="nav" aria-label="Ana menü">
+                <div class="nav-label">Genel</div>
+                <a href="/patient" class="nav-item active" data-path="/patient">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-text">Dashboard</span>
+                </a>
+                <a href="/patient/chat" class="nav-item" data-path="/patient/chat">
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-text">Sağlık Sohbeti</span>
+                </a>
+
+                <div class="nav-label">Sağlık</div>
+                <a href="/patient/metrics" class="nav-item" data-path="/patient/metrics">
+                    <span class="nav-icon">❤️</span>
+                    <span class="nav-text">Metriklerim</span>
+                </a>
+                <a href="/patient/uploads" class="nav-item" data-path="/patient/uploads">
+                    <span class="nav-icon">📎</span>
+                    <span class="nav-text">Dosyalarım</span>
+                </a>
+                <a href="/patient/reminders" class="nav-item" data-path="/patient/reminders">
+                    <span class="nav-icon">⏰</span>
+                    <span class="nav-text">Hatırlatmalar</span>
+                </a>
+
+                <div class="nav-label">Ayarlar</div>
+                <a href="/patient/profile" class="nav-item" data-path="/patient/profile">
+                    <span class="nav-icon">👤</span>
+                    <span class="nav-text">Profilim</span>
+                </a>
+                <a href="/patient/rag" class="nav-item" data-path="/patient/rag">
+                    <span class="nav-icon">🧩</span>
+                    <span class="nav-text">Bilgi Tabanım</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="/admin" class="nav-item" target="_blank" rel="noopener">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-text">Admin Paneli ↗</span>
+                </a>
+                <button type="button" class="nav-item" id="logoutBtn">
+                    <span class="nav-icon">🚪</span>
+                    <span class="nav-text">Çıkış Yap</span>
+                </button>
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div>
+                    <div class="topbar-title" id="pageTitle">Dashboard</div>
+                </div>
+                <div class="topbar-right">
+                    <button type="button" class="btn btn-secondary btn-sm" id="refreshBtn" title="Sayfayı yenile">
+                        ⟳ Yenile
+                    </button>
+                    <div class="user-chip">
+                        <div class="avatar" id="userAvatar">H</div>
+                        <div class="user-meta">
+                            <span class="user-name" id="userName">Hasta</span>
+                            <span class="user-email" id="userEmail"></span>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <section class="content" id="contentArea">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Yükleniyor...</p>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="/static/patient.js"></script>
+</body>
+</html>

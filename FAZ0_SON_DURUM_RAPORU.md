@@ -344,7 +344,8 @@ sudo systemctl status medical-ai
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
   `/admin/api/users`, `/admin/api/monitoring`, `/admin/api/uploads/stats`,
-  `/admin/api/health/*`, `/admin/api/research`, `/admin/api/utils/secret/{key}`.
+  `/admin/api/health/*`, `/admin/api/research`, `/admin/api/rag/documents`,
+  `/admin/api/rag/ingest`, `/admin/api/utils/secret/{key}`.
 - Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
 
 ## 4. Operasyon prosedürleri
@@ -378,6 +379,56 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 51 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
-  LLM anahtarının kaydedilmemesi, logout kara listesi).
+- Kabul/regresyon: 56 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+  LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
+
+## 7. Ekranlar (26 Kasım 2026)
+
+API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar canlı sunucuda
+`200` ile doğrulandı (`./restart.sh` sonrası).
+
+### Admin ekranları (`/admin/...`)
+| Adres | Ekran |
+|-------|-------|
+| `/admin/login` | Admin girişi |
+| `/admin` | Dashboard / izleme özeti |
+| `/admin/monitoring` | Sistem izleme |
+| `/admin/config` | Sistem config (hot reload) |
+| `/admin/llm` | LLM ayarları |
+| `/admin/users` | Kullanıcı yönetimi |
+| `/admin/storage` | Disk kullanımı |
+| `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) |
+| `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
+| `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
+| `/admin/rag` | Public RAG bilgi tabanı: ekleme, listeleme, silme |
+
+### Hasta ekranları (`/patient/...`)
+| Adres | Ekran |
+|-------|-------|
+| `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
+| `/patient/chat` | RAG destekli sohbet, konuşma geçmişi, kaynak göstergeleri |
+| `/patient/metrics` | Sağlık metriği ekleme ve geçmiş tablosu |
+| `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
+| `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
+| `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
+| `/patient/rag` | Kişisel bilgi tabanına metin ekleme |
+
+Hasta paneli ayrı JWT (`patient_token`) kullanır; admin token'ı hasta ekranlarında geçmez.
+Admin SPA'sındaki "Hasta Paneli ↗" ve hasta SPA'sındaki "Admin Paneli ↗" bağlantıları
+iki panel arasında geçişi sağlar. Ekranlar `admin.css` tasarım dilini kullanır; hasta
+ekranlarına özel kurallar `static/patient.css` içindedir.
+
+### Canlı doğrulama
+```text
+GET /health                 200
+GET /patient/* (7 sayfa)    200
+GET /admin/*  (11 sayfa)    200
+GET /docs                   200
+POST /api/auth/register     201  → token
+POST /api/user/metrics      201  → GET /api/user/dashboard 200
+POST /api/reminders         201  → GET /api/reminders 200
+GET /api/uploads            200 · GET /api/conversations 200
+GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200
+```
+Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

@@ -136,7 +136,7 @@ def _static_tag(filename: str) -> str:
 def _render_page(filename: str) -> HTMLResponse:
     html = Path("templates") / filename
     content = html.read_text(encoding="utf-8")
-    for asset in ("admin.css", "admin.js", "login.js"):
+    for asset in ("admin.css", "admin.js", "login.js", "patient.css", "patient.js"):
         content = content.replace(
             "/static/" + asset + '"',
             "/static/" + asset + "?v=" + _static_tag(asset) + '"',
@@ -194,9 +194,59 @@ async def admin_db_config_page():
     return _admin_page()
 
 
+@app.get("/admin/research", include_in_schema=False)
+async def admin_research_page():
+    return _admin_page()
+
+
+@app.get("/admin/rag", include_in_schema=False)
+async def admin_rag_page():
+    return _admin_page()
+
+
 @app.get("/admin/login", include_in_schema=False)
 async def admin_login_page():
     return _render_page("login.html")
+
+
+# --- Hasta Paneli (hasta JWT'si ile çalışan ayrı SPA) ---
+def _patient_page() -> HTMLResponse:
+    return _render_page("patient.html")
+
+
+@app.get("/patient", include_in_schema=False)
+async def patient_dashboard_page():
+    return _patient_page()
+
+
+@app.get("/patient/chat", include_in_schema=False)
+async def patient_chat_page():
+    return _patient_page()
+
+
+@app.get("/patient/metrics", include_in_schema=False)
+async def patient_metrics_page():
+    return _patient_page()
+
+
+@app.get("/patient/uploads", include_in_schema=False)
+async def patient_uploads_page():
+    return _patient_page()
+
+
+@app.get("/patient/reminders", include_in_schema=False)
+async def patient_reminders_page():
+    return _patient_page()
+
+
+@app.get("/patient/profile", include_in_schema=False)
+async def patient_profile_page():
+    return _patient_page()
+
+
+@app.get("/patient/rag", include_in_schema=False)
+async def patient_rag_page():
+    return _patient_page()
 
 
 @app.get("/admin/logout", include_in_schema=False)

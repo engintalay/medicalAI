@@ -202,7 +202,9 @@
         '/admin/users': { key: 'users', title: 'Kullanıcılar', render: renderUsersPage },
         '/admin/storage': { key: 'storage', title: 'Disk Kullanımı', render: renderStorage },
         '/admin/health': { key: 'health', title: 'Sağlık Metrikleri', render: renderHealth },
-        '/admin/db-config': { key: 'db-config', title: 'Veritabanı Ayarları', render: renderDbConfig }
+        '/admin/db-config': { key: 'db-config', title: 'Veritabanı Ayarları', render: renderDbConfig },
+        '/admin/research': { key: 'research', title: 'Araştırma / İçerik', render: renderResearch },
+        '/admin/rag': { key: 'rag', title: 'RAG Bilgi Tabanı', render: renderRagAdmin }
     };
 
     function setActiveNav(path) {
@@ -284,6 +286,41 @@
             const testConnectionBtn = event.target.closest('[data-test-connection]');
             if (testConnectionBtn) {
                 testConnection(testConnectionBtn.getAttribute('data-test-connection'));
+            }
+
+            const researchEditBtn = event.target.closest('[data-research-edit]');
+            if (researchEditBtn) {
+                editResearch(Number(researchEditBtn.getAttribute('data-research-edit')));
+                return;
+            }
+
+            const researchDeleteBtn = event.target.closest('[data-research-delete]');
+            if (researchDeleteBtn) {
+                deleteResearch(Number(researchDeleteBtn.getAttribute('data-research-delete')));
+                return;
+            }
+
+            const researchNewBtn = event.target.closest('#researchNewBtn');
+            if (researchNewBtn) {
+                resetResearchForm();
+                return;
+            }
+
+            const ragDeleteBtn = event.target.closest('[data-rag-delete]');
+            if (ragDeleteBtn) {
+                deleteRagSource(ragDeleteBtn.getAttribute('data-rag-delete'));
+            }
+        });
+
+        document.addEventListener('submit', function (event) {
+            const form = event.target;
+            if (!form || !form.getAttribute) return;
+            if (form.getAttribute('data-form') === 'research') {
+                event.preventDefault();
+                saveResearch(form);
+            } else if (form.getAttribute('data-form') === 'rag') {
+                event.preventDefault();
+                saveRagDocument(form);
             }
         });
 
@@ -1649,6 +1686,200 @@
                 box.textContent = 'Bağlantı başarısız: ' + error.message;
             }
             showToast('Bağlantı başarısız.', 'error');
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Araştırma / İçerik (13 parçası ekranı)                             */
+    /* ------------------------------------------------------------------ */
+
+    function researchFormHTML() {
+        return '<form class="card" data-form="research" id="researchForm">' +
+            '<div class="card-head"><div class="card-title">Araştırma Kaydı</div>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="researchNewBtn">Yeni kayıt</button></div>' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="researchSource">Kaynak</label>' +
+            '<input class="input" id="researchSource" name="source" required placeholder="Örn. WHO"></div>' +
+            '<div class="field"><label class="label" for="researchTitle">Başlık</label>' +
+            '<input class="input" id="researchTitle" name="title" required placeholder="Araştırma başlığı"></div>' +
+            '<div class="field"><label class="label" for="researchUrl">URL (opsiyonel)</label>' +
+            '<input class="input" id="researchUrl" name="url" type="url" placeholder="https://..."></div>' +
+            '</div>' +
+            '<div class="field" style="margin-top:16px"><label class="label" for="researchContent">İçerik</label>' +
+            '<textarea class="input" id="researchContent" name="content" required placeholder="Araştırma metni"></textarea>' +
+            '<span class="hint">Kaydedilen içerik otomatik olarak public RAG bilgi tabanına eklenir.</span></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary" id="researchSaveBtn">Kaydet</button></div>' +
+            '</form>';
+    }
+
+    function renderResearch() {
+        const request = api('/research?limit=200&offset=0');
+        return request.then(function (response) {
+            const items = response.data || [];
+            state.researchItems = items;
+            const rows = items.length ? items.map(function (item) {
+                const preview = (item.content || '').slice(0, 110);
+                return '<tr>' +
+                    '<td><span class="mono">' + esc(item.id) + '</span></td>' +
+                    '<td>' + esc(item.source || '—') + '</td>' +
+                    '<td><strong>' + esc(item.title || '—') + '</strong>' +
+                    (item.url ? '<div class="muted-cell"><a href="' + esc(item.url) + '" target="_blank" rel="noopener">' +
+                        esc(item.url) + '</a></div>' : '') + '</td>' +
+                    '<td><span class="truncate-cell" title="' + esc(item.content || '') + '">' + esc(preview) + '</span></td>' +
+                    '<td>' + formatDateTime(item.created_at) + '</td>' +
+                    '<td class="actions-cell">' +
+                    '<button type="button" class="btn btn-secondary btn-sm" data-research-edit="' + item.id + '">Düzenle</button>' +
+                    '<button type="button" class="btn btn-danger btn-sm" data-research-delete="' + item.id + '">Sil</button>' +
+                    '</td></tr>';
+            }).join('') : '<tr><td colspan="6" class="empty">Henüz araştırma kaydı yok.</td></tr>';
+
+            contentArea.innerHTML =
+                '<div class="page-head"><h2 class="page-title">Araştırma / İçerik</h2>' +
+                '<p class="page-sub">Public içerikleri yönetin; kayıtlar otomatik olarak hasta sohbetinin bilgi tabanına girer.</p></div>' +
+                researchFormHTML() +
+                '<div class="section-head"><div class="section-title">Kayıtlar</div>' +
+                '<span class="hint">' + formatNumber(items.length) + ' kayıt</span></div>' +
+                '<div class="table-wrap"><table class="table"><thead><tr>' +
+                '<th>#</th><th>Kaynak</th><th>Başlık</th><th>İçerik</th><th>Oluşturulma</th><th></th>' +
+                '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        });
+    }
+
+    function resetResearchForm() {
+        const form = document.getElementById('researchForm');
+        if (!form) return;
+        form.removeAttribute('data-editing');
+        form.reset();
+        const button = document.getElementById('researchSaveBtn');
+        if (button) button.textContent = 'Kaydet';
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function editResearch(id) {
+        const item = (state.researchItems || []).find(function (row) { return row.id === id; });
+        const form = document.getElementById('researchForm');
+        if (!item || !form) return;
+        form.setAttribute('data-editing', String(item.id));
+        form.elements.source.value = item.source || '';
+        form.elements.title.value = item.title || '';
+        form.elements.url.value = item.url || '';
+        form.elements.content.value = item.content || '';
+        const button = document.getElementById('researchSaveBtn');
+        if (button) button.textContent = 'Güncelle';
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    async function saveResearch(form) {
+        const id = form.getAttribute('data-editing');
+        const payload = {
+            source: form.elements.source.value.trim(),
+            title: form.elements.title.value.trim(),
+            content: form.elements.content.value.trim(),
+            url: form.elements.url.value.trim()
+        };
+        const button = document.getElementById('researchSaveBtn');
+        if (button) button.disabled = true;
+        try {
+            if (id) {
+                await api('/research/' + encodeURIComponent(id), { method: 'PUT', body: payload });
+                showToast('Araştırma kaydı güncellendi.', 'success');
+            } else {
+                await api('/research', { method: 'POST', body: payload });
+                showToast('Araştırma kaydı eklendi ve RAG\'a yüklendi.', 'success');
+            }
+            await navigate('/admin/research', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function deleteResearch(id) {
+        if (!window.confirm('Bu araştırma kaydı silinsin mi?')) return;
+        try {
+            await api('/research/' + encodeURIComponent(id), { method: 'DELETE' });
+            showToast('Kayıt silindi.', 'success');
+            await navigate('/admin/research', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* RAG bilgi tabanı (public içerik)                                    */
+    /* ------------------------------------------------------------------ */
+
+    async function renderRagAdmin() {
+        const response = await api('/rag/documents');
+        const items = response.data || [];
+        const rows = items.length ? items.map(function (item) {
+            return '<tr>' +
+                '<td><span class="mono">' + esc(item.source) + '</span></td>' +
+                '<td>' + formatNumber(item.chunks) + '</td>' +
+                '<td>' + formatNumber(item.public_chunks) + '</td>' +
+                '<td>' + formatDateTime(item.created_at) + '</td>' +
+                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                'data-rag-delete="' + esc(item.source) + '">Sil</button></td>' +
+                '</tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">Henüz RAG içeriği yok.</td></tr>';
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">RAG Bilgi Tabanı</h2>' +
+            '<p class="page-sub">Public bilgi parçalarını yönetin. Aynı kaynak adı yeniden yüklenirse eski parçalar değiştirilir.</p></div>' +
+            '<form class="card" data-form="rag" id="ragForm">' +
+            '<div class="card-title" style="margin-bottom:16px">Yeni içerik ekle</div>' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="ragSource">Kaynak adı</label>' +
+            '<input class="input" id="ragSource" name="source" required placeholder="Örn. genel-bilgi"></div>' +
+            '<div class="field"><label class="label" for="ragChunkSize">Parça boyutu</label>' +
+            '<input class="input" id="ragChunkSize" name="chunk_size" type="number" min="100" max="4000" value="800"></div>' +
+            '<div class="field"><label class="label" for="ragOverlap">Örtüşme</label>' +
+            '<input class="input" id="ragOverlap" name="overlap" type="number" min="0" max="1000" value="100"></div>' +
+            '</div>' +
+            '<div class="field" style="margin-top:16px"><label class="label" for="ragText">Metin</label>' +
+            '<textarea class="input" id="ragText" name="text" required placeholder="Bilgi tabanına eklenecek metin"></textarea>' +
+            '<span class="hint">İçerik yerel embedding modeliyle parçalanır; tüm hastaların aramasına açılır.</span></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary" id="ragSaveBtn">Bilgi tabanına ekle</button></div>' +
+            '</form>' +
+            '<div class="section-head"><div class="section-title">Kaynaklar</div>' +
+            '<span class="hint">' + formatNumber(items.length) + ' kaynak</span></div>' +
+            '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Kaynak</th><th>Parça</th><th>Public parça</th><th>Oluşturulma</th><th></th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function saveRagDocument(form) {
+        const payload = {
+            source: form.elements.source.value.trim(),
+            text: form.elements.text.value.trim(),
+            chunk_size: Number(form.elements.chunk_size.value) || 800,
+            overlap: Number(form.elements.overlap.value) || 0
+        };
+        const button = document.getElementById('ragSaveBtn');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/rag/ingest', { method: 'POST', body: payload });
+            const info = response.data || {};
+            showToast(formatNumber(info.chunks) + ' parça eklendi (' + esc(info.model || 'model') + ').', 'success');
+            await navigate('/admin/rag', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function deleteRagSource(source) {
+        if (!window.confirm('"' + source + '" kaynağına ait tüm public parçalar silinsin mi?')) return;
+        try {
+            await api('/rag/documents/' + encodeURIComponent(source), { method: 'DELETE' });
+            showToast('RAG kaynağı silindi.', 'success');
+            await navigate('/admin/rag', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
         }
     }
 

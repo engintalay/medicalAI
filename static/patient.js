@@ -1,0 +1,1076 @@
+/**
+ * Medical AI Hasta Paneli
+ * Hasta JWT'si ile çalışan tek sayfa uygulama (SPA).
+ */
+(function () {
+    'use strict';
+
+    const TOKEN_KEY = 'patient_token';
+    const USER_KEY = 'patient_user';
+
+    const contentArea = document.getElementById('contentArea');
+    const pageTitle = document.getElementById('pageTitle');
+    const userName = document.getElementById('userName');
+    const userEmail = document.getElementById('userEmail');
+    const userAvatar = document.getElementById('userAvatar');
+    const toastEl = document.getElementById('toast');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+
+    const state = {
+        token: localStorage.getItem(TOKEN_KEY) || '',
+        user: readUser(),
+        page: 'dashboard',
+        authMode: 'login',
+        chat: { conversations: [], activeId: null, messages: [] },
+        toastTimer: null
+    };
+
+    /* ------------------------------------------------------------------ */
+    /* Yardımcılar                                                        */
+    /* ------------------------------------------------------------------ */
+
+    function readUser() {
+        try {
+            return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function esc(value) {
+        return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function (ch) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+        });
+    }
+
+    function formatDateTime(value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleDateString('tr-TR') + ' ' +
+            date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatNumber(value, digits) {
+        if (value === null || value === undefined || value === '') return '—';
+        const number = Number(value);
+        if (Number.isNaN(number)) return esc(value);
+        return number.toLocaleString('tr-TR', {
+            minimumFractionDigits: digits === undefined ? 0 : digits,
+            maximumFractionDigits: digits === undefined ? 2 : digits
+        });
+    }
+
+    function formatBytes(value) {
+        const bytes = Number(value);
+        if (!Number.isFinite(bytes) || bytes < 0) return '—';
+        if (bytes < 1024) return formatNumber(bytes) + ' B';
+        const units = ['KB', 'MB', 'GB', 'TB'];
+        let size = bytes / 1024;
+        let unit = 0;
+        while (size >= 1024 && unit < units.length - 1) {
+            size /= 1024;
+            unit += 1;
+        }
+        return formatNumber(size, size < 10 ? 2 : 1) + ' ' + units[unit];
+    }
+
+    function loadingHTML(message) {
+        return '<div class="loading"><div class="spinner"></div><p>' +
+            esc(message || 'Yükleniyor...') + '</p></div>';
+    }
+
+    function errorHTML(message) {
+        return '<div class="error-box"><div class="emoji">⚠️</div>' +
+            '<p>' + esc(message || 'Beklenmeyen bir hata oluştu.') + '</p>' +
+            '<button type="button" class="btn btn-primary" id="retryBtn">Tekrar Dene</button></div>';
+    }
+
+    function showToast(message, type) {
+        if (!toastEl) return;
+        toastEl.textContent = message;
+        toastEl.className = 'toast show' + (type ? ' ' + type : '');
+        clearTimeout(state.toastTimer);
+        state.toastTimer = setTimeout(function () {
+            toastEl.className = 'toast';
+        }, 3500);
+    }
+
+    function extractError(data, status) {
+        if (!data) return 'İstek başarısız (HTTP ' + status + ')';
+        const detail = data.error || data.message || data.detail;
+        if (Array.isArray(detail)) {
+            return detail.map(function (item) {
+                if (typeof item === 'string') return item;
+                return item.msg || JSON.stringify(item);
+            }).join(', ');
+        }
+        return detail || 'İstek başarısız (HTTP ' + status + ')';
+    }
+
+    class AuthError extends Error {}
+
+    async function api(path, options) {
+        options = options || {};
+        const headers = new Headers(options.headers || {});
+        if (state.token) headers.set('Authorization', 'Bearer ' + state.token);
+
+        let body = options.body;
+        if (body && typeof body === 'object' && !(body instanceof FormData) &&
+            !(body instanceof URLSearchParams)) {
+            headers.set('Content-Type', 'application/json');
+            body = JSON.stringify(body);
+        }
+
+        const response = await fetch(path, {
+            method: options.method || 'GET',
+            headers: headers,
+            body: body
+        });
+
+        const text = await response.text();
+        let data = null;
+        if (text) {
+            try {
+                data = JSON.parse(text);
+            } catch (error) {
+                data = { raw: text };
+            }
+        }
+
+        if (response.status === 401) {
+            clearAuth();
+            renderAuth('Oturum süresi doldu, tekrar giriş yapın.');
+            throw new AuthError('Oturum süresi doldu');
+        }
+
+        if (!response.ok) {
+            throw new Error(extractError(data, response.status));
+        }
+
+        if (data && data.success === false) {
+            throw new Error(extractError(data, response.status));
+        }
+
+        return data;
+    }
+
+    function clearAuth() {
+        state.token = '';
+        state.user = null;
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+    }
+
+    function updateUserChip() {
+        const user = state.user || {};
+        const name = user.full_name || 'Hasta';
+        if (userName) userName.textContent = name;
+        if (userEmail) userEmail.textContent = user.email || '';
+        if (userAvatar) userAvatar.textContent = (name.charAt(0) || 'H').toUpperCase();
+    }
+
+    function statCard(icon, iconClass, value, label) {
+        return '<div class="stat-card">' +
+            '<div class="stat-icon ' + iconClass + '">' + icon + '</div>' +
+            '<div><div class="stat-value">' + esc(value) + '</div>' +
+            '<div class="stat-label">' + esc(label) + '</div></div></div>';
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Giriş / kayıt                                                      */
+    /* ------------------------------------------------------------------ */
+
+    function renderAuth(notice) {
+        state.page = 'auth';
+        if (pageTitle) pageTitle.textContent = 'Giriş';
+        document.title = 'Medical AI · Hasta Girişi';
+        document.querySelectorAll('.nav-item[data-path]').forEach(function (item) {
+            item.classList.remove('active');
+        });
+        const register = state.authMode === 'register';
+        const extra = register
+            ? '<div class="form-grid">' +
+              '<div class="field"><label class="label" for="authFullName">Ad Soyad</label>' +
+              '<input class="input" id="authFullName" name="full_name" required></div>' +
+              '<div class="field"><label class="label" for="authCity">Şehir</label>' +
+              '<input class="input" id="authCity" name="city"></div>' +
+              '<div class="field"><label class="label" for="authHeight">Boy (cm)</label>' +
+              '<input class="input" id="authHeight" name="height_cm" type="number" step="0.1" min="50" max="250"></div>' +
+              '<div class="field"><label class="label" for="authWeight">Kilo (kg)</label>' +
+              '<input class="input" id="authWeight" name="weight_kg" type="number" step="0.1" min="10" max="400"></div>' +
+              '<div class="field"><label class="label" for="authBirth">Doğum yılı</label>' +
+              '<input class="input" id="authBirth" name="birth_year" type="number" min="1900" max="2100"></div>' +
+              '</div>'
+            : '';
+
+        contentArea.innerHTML =
+            '<div class="auth-page"><div class="card auth-card">' +
+            '<div class="login-brand"><div class="brand-logo">🩺</div>' +
+            '<div><div class="login-title">Medical AI</div><div class="login-sub">Hasta Paneli</div></div></div>' +
+            '<div class="auth-tabs">' +
+            '<button type="button" class="btn ' + (register ? 'btn-secondary' : 'btn-primary') +
+            '" data-auth-mode="login">Giriş Yap</button>' +
+            '<button type="button" class="btn ' + (register ? 'btn-primary' : 'btn-secondary') +
+            '" data-auth-mode="register">Kayıt Ol</button></div>' +
+            (notice ? '<div class="alert alert-error show">' + esc(notice) + '</div>' : '') +
+            '<form class="login-form" id="authForm" data-form="auth">' +
+            '<div class="field"><label class="label" for="authEmail">E-posta</label>' +
+            '<input class="input" id="authEmail" name="email" type="email" autocomplete="email" required></div>' +
+            '<div class="field"><label class="label" for="authPassword">Şifre</label>' +
+            '<input class="input" id="authPassword" name="password" type="password" ' +
+            'autocomplete="' + (register ? 'new-password' : 'current-password') + '" required></div>' +
+            extra +
+            '<button type="submit" class="btn btn-primary" id="authSubmitBtn">' +
+            (register ? 'Kayıt Ol' : 'Giriş Yap') + '</button>' +
+            '</form>' +
+            '<div class="auth-note">Bu panel sağlık verilerinizi görüntülemek içindir; ' +
+            'verdiğiniz yanıtlar tanı yerine geçmez, doktorunuza danışın.</div>' +
+            '</div></div>';
+    }
+
+    function switchAuthMode(mode) {
+        if (state.authMode === mode) return;
+        state.authMode = mode;
+        renderAuth();
+    }
+
+    async function submitAuth(form) {
+        const register = state.authMode === 'register';
+        const payload = {
+            email: form.elements.email.value.trim(),
+            password: form.elements.password.value
+        };
+        if (register) {
+            payload.full_name = form.elements.full_name.value.trim();
+            const city = form.elements.city.value.trim();
+            if (city) payload.city = city;
+            ['height_cm', 'weight_kg', 'birth_year'].forEach(function (key) {
+                const raw = form.elements[key].value;
+                if (raw !== '') payload[key] = Number(raw);
+            });
+        }
+        const button = document.getElementById('authSubmitBtn');
+        if (button) button.disabled = true;
+        try {
+            const response = await fetch(register ? '/api/auth/register' : '/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const text = await response.text();
+            const data = text ? JSON.parse(text) : null;
+            if (!response.ok || !data || !data.token) {
+                throw new Error(extractError(data, response.status));
+            }
+            state.token = data.token;
+            state.user = data.user || data.data || null;
+            localStorage.setItem(TOKEN_KEY, state.token);
+            localStorage.setItem(USER_KEY, JSON.stringify(state.user || {}));
+            updateUserChip();
+            showToast(register ? 'Hesabınız oluşturuldu. Hoş geldiniz!' : 'Hoş geldiniz!', 'success');
+            await navigate('/patient');
+        } catch (error) {
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Yönlendirme / kabuk                                                */
+    /* ------------------------------------------------------------------ */
+
+    const PAGES = {
+        '/patient': { key: 'dashboard', title: 'Dashboard', render: renderDashboard },
+        '/patient/chat': { key: 'chat', title: 'Sağlık Sohbeti', render: renderChat },
+        '/patient/metrics': { key: 'metrics', title: 'Metriklerim', render: renderMetrics },
+        '/patient/uploads': { key: 'uploads', title: 'Dosyalarım', render: renderUploads },
+        '/patient/reminders': { key: 'reminders', title: 'Hatırlatmalar', render: renderReminders },
+        '/patient/profile': { key: 'profile', title: 'Profilim', render: renderProfile },
+        '/patient/rag': { key: 'rag', title: 'Bilgi Tabanım', render: renderPatientRag }
+    };
+
+    function setActiveNav(path) {
+        document.querySelectorAll('.nav-item[data-path]').forEach(function (item) {
+            item.classList.toggle('active', item.getAttribute('data-path') === path);
+        });
+    }
+
+    async function navigate(path, options) {
+        options = options || {};
+        if (!state.token) {
+            renderAuth();
+            return;
+        }
+        const resolved = PAGES[path] || PAGES['/patient'];
+        const effectivePath = PAGES[path] ? path : '/patient';
+
+        if (options.push !== false && window.location.pathname !== effectivePath) {
+            window.history.pushState({}, '', effectivePath);
+        }
+
+        state.page = resolved.key;
+        setActiveNav(effectivePath);
+        if (pageTitle) pageTitle.textContent = resolved.title;
+        document.title = 'Medical AI · ' + resolved.title;
+        contentArea.innerHTML = loadingHTML();
+
+        try {
+            await resolved.render();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            contentArea.innerHTML = errorHTML(error.message);
+        }
+    }
+
+    function setupShell() {
+        updateUserChip();
+
+        document.addEventListener('click', function (event) {
+            const navLink = event.target.closest('[data-path]');
+            if (navLink) {
+                event.preventDefault();
+                navigate(navLink.getAttribute('data-path'));
+                return;
+            }
+
+            const authModeBtn = event.target.closest('[data-auth-mode]');
+            if (authModeBtn) {
+                switchAuthMode(authModeBtn.getAttribute('data-auth-mode'));
+                return;
+            }
+
+            const retry = event.target.closest('#retryBtn');
+            if (retry) {
+                navigate(window.location.pathname, { push: false });
+                return;
+            }
+
+            const convBtn = event.target.closest('[data-conv]');
+            if (convBtn) {
+                openConversation(Number(convBtn.getAttribute('data-conv')));
+                return;
+            }
+
+            const newChatBtn = event.target.closest('#newChatBtn');
+            if (newChatBtn) {
+                newConversation();
+                return;
+            }
+
+            const exportBtn = event.target.closest('[data-export]');
+            if (exportBtn) {
+                exportData(exportBtn.getAttribute('data-export'));
+                return;
+            }
+
+            const reminderDelete = event.target.closest('[data-reminder-delete]');
+            if (reminderDelete) {
+                deleteReminder(Number(reminderDelete.getAttribute('data-reminder-delete')));
+                return;
+            }
+
+            const uploadDelete = event.target.closest('[data-upload-delete]');
+            if (uploadDelete) {
+                deleteUpload(Number(uploadDelete.getAttribute('data-upload-delete')));
+                return;
+            }
+
+            const uploadExtract = event.target.closest('[data-upload-extract]');
+            if (uploadExtract) {
+                extractUpload(Number(uploadExtract.getAttribute('data-upload-extract')));
+            }
+        });
+
+        document.addEventListener('submit', function (event) {
+            const form = event.target;
+            if (!form || !form.getAttribute) return;
+            const name = form.getAttribute('data-form');
+            if (name === 'auth') {
+                event.preventDefault();
+                submitAuth(form);
+            } else if (name === 'metric') {
+                event.preventDefault();
+                addMetric(form);
+            } else if (name === 'upload') {
+                event.preventDefault();
+                uploadFile(form);
+            } else if (name === 'reminder') {
+                event.preventDefault();
+                addReminder(form);
+            } else if (name === 'prefs') {
+                event.preventDefault();
+                savePreferences(form);
+            } else if (name === 'profile') {
+                event.preventDefault();
+                saveProfile(form);
+            } else if (name === 'rag') {
+                event.preventDefault();
+                ingestPatientRag(form);
+            } else if (name === 'chat') {
+                event.preventDefault();
+                sendChat(form);
+            }
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.target && event.target.id === 'chatInput' && event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                const form = document.getElementById('chatForm');
+                if (form && form.requestSubmit) form.requestSubmit();
+            }
+        });
+
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function () {
+                navigate(window.location.pathname, { push: false });
+            });
+        }
+
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async function () {
+                logoutBtn.disabled = true;
+                try {
+                    if (state.token) await api('/api/auth/logout', { method: 'POST' });
+                } catch (error) {
+                    // Token zaten geçersiz olabilir; istemciyi yine temizle.
+                } finally {
+                    clearAuth();
+                    renderAuth();
+                    window.history.pushState({}, '', '/patient');
+                }
+            });
+        }
+
+        window.addEventListener('popstate', function () {
+            if (!state.token) {
+                renderAuth();
+                return;
+            }
+            navigate(window.location.pathname, { push: false });
+        });
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Dashboard                                                          */
+    /* ------------------------------------------------------------------ */
+
+    function trendSVG(trend) {
+        if (!trend || trend.length < 2) {
+            return '<div class="hint">Grafik için en az iki kilo kaydı ekleyin.</div>';
+        }
+        const values = trend.map(function (item) { return Number(item.value); })
+            .filter(function (value) { return Number.isFinite(value); });
+        if (values.length < 2) return '<div class="hint">Geçerli kilo kaydı bulunamadı.</div>';
+        const min = Math.min.apply(null, values);
+        const max = Math.max.apply(null, values);
+        const span = max - min || 1;
+        const points = values.map(function (value, index) {
+            const x = 8 + (index * 584) / Math.max(1, values.length - 1);
+            const y = 100 - ((value - min) / span) * 84;
+            return x.toFixed(1) + ',' + y.toFixed(1);
+        }).join(' ');
+        return '<div class="trend-box"><svg class="trend-svg" viewBox="0 0 600 110" ' +
+            'preserveAspectRatio="none" aria-label="Kilo değişimi">' +
+            '<polyline fill="none" stroke="#2563eb" stroke-width="3" points="' + points + '"></polyline>' +
+            '</svg><div class="trend-labels"><span>' + esc(formatNumber(min, 1)) + ' kg</span>' +
+            '<span>' + esc(formatNumber(max, 1)) + ' kg</span></div></div>';
+    }
+
+    async function renderDashboard() {
+        const response = await api('/api/user/dashboard');
+        const data = response.data || {};
+        const profile = data.profile || {};
+        const trend = data.weight_trend || [];
+        const metrics = data.metrics || [];
+        const reminders = data.reminders || [];
+        const uploads = data.uploads || [];
+
+        const metricRows = metrics.slice(0, 8).map(function (item) {
+            return '<tr><td>' + esc(item.name) + '</td><td>' + esc(formatNumber(item.value, 1)) + '</td>' +
+                '<td>' + esc(item.unit || '—') + '</td><td>' + formatDateTime(item.date) + '</td></tr>';
+        }).join('') || '<tr><td colspan="4" class="empty">Henüz metrik kaydı yok.</td></tr>';
+
+        const reminderRows = reminders.slice(0, 5).map(function (item) {
+            return '<div class="kv-row"><span class="k">' + esc(item.title) + '</span>' +
+                '<span class="v">' + formatDateTime(item.due_date) + '</span></div>';
+        }).join('') || '<div class="hint">Yaklaşan hatırlatma yok.</div>';
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Merhaba, ' +
+            esc(profile.full_name || (state.user && state.user.full_name) || 'Hasta') + '</h2>' +
+            '<p class="page-sub">Sağlık verilerinizin özeti ve hızlı işlemler.</p></div>' +
+            '<div class="stats-grid">' +
+            statCard('❤️', 'red', formatNumber(metrics.length), 'Sağlık metriği') +
+            statCard('📎', '', formatNumber(uploads.length || data.upload_count || 0), 'Yüklenen dosya') +
+            statCard('⏰', 'amber', formatNumber(reminders.length), 'Aktif hatırlatma') +
+            statCard('🧩', 'green', formatNumber(trend.length), 'Kilo ölçümü') +
+            '</div>' +
+            '<div class="cards-grid">' +
+            '<div class="card"><div class="card-head"><div class="card-title">Profil özeti</div>' +
+            '<a class="btn btn-secondary btn-sm" href="/patient/profile" data-path="/patient/profile">Düzenle</a></div>' +
+            '<div class="kv-list">' +
+            '<div class="kv-row"><span class="k">Ad Soyad</span><span class="v">' + esc(profile.full_name || '—') + '</span></div>' +
+            '<div class="kv-row"><span class="k">E-posta</span><span class="v">' +
+            esc((state.user && state.user.email) || '—') + '</span></div>' +
+            '<div class="kv-row"><span class="k">Boy</span><span class="v">' +
+            esc(profile.height_cm ? formatNumber(profile.height_cm, 1) + ' cm' : '—') + '</span></div>' +
+            '<div class="kv-row"><span class="k">Kilo</span><span class="v">' +
+            esc(profile.weight_kg ? formatNumber(profile.weight_kg, 1) + ' kg' : '—') + '</span></div>' +
+            '<div class="kv-row"><span class="k">Şehir</span><span class="v">' + esc(profile.city || '—') + '</span></div>' +
+            '</div></div>' +
+            '<div class="card"><div class="card-head"><div class="card-title">Kilo değişimi</div></div>' +
+            trendSVG(trend) +
+            '<div class="card-note">Son 30 kilo ölçümü grafiğe yansır.</div></div>' +
+            '</div>' +
+            '<div class="section-head"><div class="section-title">Son metrikler</div>' +
+            '<a class="btn btn-secondary btn-sm" href="/patient/metrics" data-path="/patient/metrics">Tümünü gör</a></div>' +
+            '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Metrik</th><th>Değer</th><th>Birim</th><th>Tarih</th>' +
+            '</tr></thead><tbody>' + metricRows + '</tbody></table></div>' +
+            '<div class="section-head"><div class="section-title">Yaklaşan hatırlatmalar</div>' +
+            '<a class="btn btn-secondary btn-sm" href="/patient/reminders" data-path="/patient/reminders">Yönet</a></div>' +
+            '<div class="card">' + reminderRows + '</div>' +
+            '<div class="section-head"><div class="section-title">Hızlı işlemler</div></div>' +
+            '<div class="quick-actions">' +
+            '<button type="button" class="btn btn-primary" data-export="csv">⬇️ CSV indir</button>' +
+            '<button type="button" class="btn btn-secondary" data-export="pdf">⬇️ PDF indir</button>' +
+            '<a class="btn btn-secondary" href="/patient/chat" data-path="/patient/chat">💬 Sohbet et</a>' +
+            '<a class="btn btn-secondary" href="/patient/uploads" data-path="/patient/uploads">📎 Dosya yükle</a>' +
+            '</div>';
+    }
+
+    async function exportData(format) {
+        try {
+            const response = await fetch('/api/user/export?format=' + encodeURIComponent(format), {
+                headers: { Authorization: 'Bearer ' + state.token }
+            });
+            if (response.status === 401) {
+                clearAuth();
+                renderAuth();
+                return;
+            }
+            if (!response.ok) {
+                const data = await response.json().catch(function () { return null; });
+                throw new Error(extractError(data, response.status));
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'medicalai-rapor.' + format;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+            showToast(format.toUpperCase() + ' raporu indirildi.', 'success');
+        } catch (error) {
+            showToast(error.message, 'error');
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Sohbet                                                             */
+    /* ------------------------------------------------------------------ */
+
+    function renderMessages() {
+        const box = document.getElementById('chatMessages');
+        if (!box) return;
+        if (!state.chat.messages.length) {
+            box.innerHTML = '<div class="chat-empty"><div class="emoji">💬</div>' +
+                '<div>Sağlık sorularınızı sorun. Yanıtlar bilgi tabanındaki kaynaklara dayanır.</div>' +
+                '<div class="hint" style="margin-top:8px">Bu sohbet tanı yerine geçmez.</div></div>';
+            return;
+        }
+        box.innerHTML = state.chat.messages.map(function (msg) {
+            const sources = (msg.sources || []).map(function (source) {
+                return '<span class="source-chip">' + esc(source.source || 'kaynak') +
+                    ' · ' + esc(formatNumber(source.score, 2)) + '</span>';
+            }).join('');
+            return '<div class="msg ' + esc(msg.role) + '">' + esc(msg.content) +
+                (sources ? '<div class="msg-sources">' + sources + '</div>' : '') + '</div>';
+        }).join('');
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function renderConversationList() {
+        const list = document.getElementById('conversationList');
+        if (!list) return;
+        const items = state.chat.conversations;
+        list.innerHTML = items.length ? items.map(function (item) {
+            return '<button type="button" class="conv-item' +
+                (state.chat.activeId === item.id ? ' active' : '') + '" data-conv="' + item.id + '">' +
+                '<div class="conv-title">' + esc(item.title || 'Sohbet ' + item.id) + '</div>' +
+                '<div class="conv-date">' + formatDateTime(item.created_at) + '</div></button>';
+        }).join('') : '<div class="empty" style="padding:20px 12px">Henüz sohbet yok.</div>';
+    }
+
+    async function renderChat() {
+        const response = await api('/api/conversations');
+        state.chat.conversations = response.data || [];
+        state.chat.activeId = null;
+        state.chat.messages = [];
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Sağlık Sohbeti</h2>' +
+            '<p class="page-sub">RAG destekli yanıtlar; kaynaklar her yanıtın altında gösterilir.</p></div>' +
+            '<div class="chat-layout">' +
+            '<div class="chat-sidebar"><div class="chat-sidebar-head">' +
+            '<button type="button" class="btn btn-primary btn-sm" id="newChatBtn">＋ Yeni sohbet</button>' +
+            '<span class="hint">' + formatNumber(state.chat.conversations.length) + ' konuşma</span></div>' +
+            '<div class="conv-list" id="conversationList"></div></div>' +
+            '<div class="chat-main">' +
+            '<div class="chat-head"><span class="card-title">Sohbet</span>' +
+            '<span class="hint">Yanıtlar tanı değildir</span></div>' +
+            '<div class="chat-messages" id="chatMessages"></div>' +
+            '<form class="chat-composer" data-form="chat" id="chatForm">' +
+            '<textarea id="chatInput" name="message" placeholder="Mesajınızı yazın... (Enter: gönder)" required></textarea>' +
+            '<button type="submit" class="btn btn-primary" id="chatSendBtn">Gönder</button>' +
+            '</form></div></div>';
+
+        renderConversationList();
+        renderMessages();
+    }
+
+    async function openConversation(id) {
+        state.chat.activeId = id;
+        try {
+            const response = await api('/api/conversations/' + encodeURIComponent(id));
+            state.chat.messages = (response.data && response.data.messages) || [];
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            return;
+        }
+        renderConversationList();
+        renderMessages();
+    }
+
+    function newConversation() {
+        state.chat.activeId = null;
+        state.chat.messages = [];
+        renderConversationList();
+        renderMessages();
+        const input = document.getElementById('chatInput');
+        if (input) input.focus();
+    }
+
+    async function sendChat(form) {
+        const message = form.elements.message.value.trim();
+        if (!message) return;
+        const button = document.getElementById('chatSendBtn');
+        const isNew = state.chat.activeId === null;
+        state.chat.messages.push({ role: 'user', content: message });
+        renderMessages();
+        form.elements.message.value = '';
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/api/chat', {
+                method: 'POST',
+                body: { message: message, conversation_id: state.chat.activeId }
+            });
+            const data = response.data || {};
+            state.chat.activeId = data.conversation_id || state.chat.activeId;
+            state.chat.messages.push({
+                role: 'assistant', content: data.answer || '', sources: data.sources || []
+            });
+            if (isNew && state.chat.activeId !== null) {
+                const list = await api('/api/conversations');
+                state.chat.conversations = list.data || [];
+                renderConversationList();
+            }
+            renderMessages();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            state.chat.messages.pop();
+            showToast(error.message, 'error');
+            renderMessages();
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Sağlık metrikleri                                                  */
+    /* ------------------------------------------------------------------ */
+
+    async function renderMetrics() {
+        const response = await api('/api/user/dashboard');
+        const items = (response.data && response.data.metrics) || [];
+        const rows = items.length ? items.map(function (item) {
+            return '<tr><td>' + esc(item.name) + '</td>' +
+                '<td>' + esc(formatNumber(item.value, 2)) + '</td>' +
+                '<td>' + esc(item.unit || '—') + '</td>' +
+                '<td>' + formatDateTime(item.date) + '</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="empty">Henüz metrik kaydı yok.</td></tr>';
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Sağlık Metriklerim</h2>' +
+            '<p class="page-sub">Kilo, tansiyon, nabız gibi ölçümlerinizi kaydedin.</p></div>' +
+            '<form class="card" data-form="metric" id="metricForm">' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="metricName">Metrik adı</label>' +
+            '<input class="input" id="metricName" name="name" required placeholder="Örn. weight, tansiyon"></div>' +
+            '<div class="field"><label class="label" for="metricValue">Değer</label>' +
+            '<input class="input" id="metricValue" name="value" type="number" step="any" required></div>' +
+            '<div class="field"><label class="label" for="metricUnit">Birim</label>' +
+            '<input class="input" id="metricUnit" name="unit" placeholder="Örn. kg, mmHg"></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Kaydet</button></div>' +
+            '</form>' +
+            '<div class="section-head"><div class="section-title">Geçmiş</div>' +
+            '<span class="hint">' + formatNumber(items.length) + ' kayıt</span></div>' +
+            '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Metrik</th><th>Değer</th><th>Birim</th><th>Tarih</th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function addMetric(form) {
+        const payload = {
+            name: form.elements.name.value.trim(),
+            value: Number(form.elements.value.value),
+            unit: form.elements.unit.value.trim() || null
+        };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            await api('/api/user/metrics', { method: 'POST', body: payload });
+            showToast('Metrik kaydedildi.', 'success');
+            await navigate('/patient/metrics', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Dosyalar                                                           */
+    /* ------------------------------------------------------------------ */
+
+    async function renderUploads() {
+        const response = await api('/api/uploads');
+        const items = response.data || [];
+        const rows = items.length ? items.map(function (item) {
+            return '<tr><td>' + esc(item.filename) + '</td>' +
+                '<td>' + esc(item.mime_type || '—') + '</td>' +
+                '<td>' + formatBytes(item.size) + '</td>' +
+                '<td>' + formatDateTime(item.created_at) + '</td>' +
+                '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-upload-extract="' + item.id + '">Metin çıkar</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" data-upload-delete="' + item.id + '">Sil</button>' +
+                '</td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">Henüz dosya yüklemediniz.</td></tr>';
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Dosyalarım</h2>' +
+            '<p class="page-sub">PDF, görsel ve metin dosyalarınızı yükleyin; içeriklerinden metin çıkarabilirsiniz.</p></div>' +
+            '<form class="card" data-form="upload" id="uploadForm">' +
+            '<label class="dropzone" for="uploadFile">' +
+            '<span class="emoji">📎</span><strong>Dosya seç veya sürükle-bırak</strong>' +
+            '<span class="hint">PDF, JPEG, PNG, WebP, TXT · maksimum boyut config\'den okunur</span>' +
+            '<input type="file" id="uploadFile" name="file" class="hidden" required></label>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Yükle</button></div>' +
+            '</form><div id="extractResult"></div>' +
+            '<div class="section-head"><div class="section-title">Yüklenen dosyalar</div>' +
+            '<span class="hint">' + formatNumber(items.length) + ' dosya</span></div>' +
+            '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Dosya</th><th>Tip</th><th>Boyut</th><th>Tarih</th><th></th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+        const zone = document.querySelector('.dropzone');
+        const input = document.getElementById('uploadFile');
+        if (zone && input) {
+            ['dragenter', 'dragover'].forEach(function (type) {
+                zone.addEventListener(type, function (event) {
+                    event.preventDefault();
+                    zone.classList.add('dragover');
+                });
+            });
+            ['dragleave', 'drop'].forEach(function (type) {
+                zone.addEventListener(type, function (event) {
+                    event.preventDefault();
+                    zone.classList.remove('dragover');
+                });
+            });
+            zone.addEventListener('drop', function (event) {
+                if (event.dataTransfer && event.dataTransfer.files.length) {
+                    input.files = event.dataTransfer.files;
+                }
+            });
+        }
+    }
+
+    async function uploadFile(form) {
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            await api('/api/uploads', { method: 'POST', body: new FormData(form) });
+            showToast('Dosya yüklendi.', 'success');
+            await navigate('/patient/uploads', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function deleteUpload(id) {
+        if (!window.confirm('Bu dosya silinsin mi?')) return;
+        try {
+            await api('/api/uploads/' + encodeURIComponent(id), { method: 'DELETE' });
+            showToast('Dosya silindi.', 'success');
+            await navigate('/patient/uploads', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function extractUpload(id) {
+        const box = document.getElementById('extractResult');
+        if (box) {
+            box.innerHTML = '<div class="alert alert-info show">Metin çıkarılıyor...</div>';
+        }
+        try {
+            const response = await api('/api/uploads/' + encodeURIComponent(id) + '/extract', {
+                method: 'POST', body: {}
+            });
+            const data = response.data || {};
+            const text = data.text || data.extracted_text || JSON.stringify(data);
+            if (box) {
+                box.innerHTML = '<div class="extract-box">' + esc(text) + '</div>';
+            }
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            if (box) {
+                box.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
+            }
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Hatırlatmalar ve tercihler                                         */
+    /* ------------------------------------------------------------------ */
+
+    async function renderReminders() {
+        const [listResponse, prefsResponse] = await Promise.all([
+            api('/api/reminders'),
+            api('/api/user/notification-preferences')
+        ]);
+        const items = listResponse.data || [];
+        const prefs = prefsResponse.data || {};
+        const rows = items.length ? items.map(function (item) {
+            return '<tr><td>' + esc(item.type) + '</td>' +
+                '<td>' + esc(item.title) + '</td>' +
+                '<td>' + formatDateTime(item.due_date) + '</td>' +
+                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                'data-reminder-delete="' + item.id + '">Sil</button></td></tr>';
+        }).join('') : '<tr><td colspan="4" class="empty">Aktif hatırlatma yok.</td></tr>';
+
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Hatırlatmalar</h2>' +
+            '<p class="page-sub">İlaç, kontrol ve tahlil zamanlarınızı takip edin.</p></div>' +
+            '<form class="card" data-form="reminder" id="reminderForm">' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="reminderType">Tip</label>' +
+            '<select class="select" id="reminderType" name="type">' +
+            '<option value="medication">İlaç</option><option value="checkup">Kontrol</option>' +
+            '<option value="lab">Tahlil</option><option value="other">Diğer</option></select></div>' +
+            '<div class="field"><label class="label" for="reminderTitle">Başlık</label>' +
+            '<input class="input" id="reminderTitle" name="title" required placeholder="Örn. Kan basıncı ölçümü"></div>' +
+            '<div class="field"><label class="label" for="reminderDue">Tarih ve saat</label>' +
+            '<input class="input" id="reminderDue" name="due_date" type="datetime-local" required></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Hatırlatma ekle</button></div>' +
+            '</form>' +
+            '<div class="section-head"><div class="section-title">Aktif hatırlatmalar</div></div>' +
+            '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Tip</th><th>Başlık</th><th>Zaman</th><th></th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+            '<div class="section-head"><div class="section-title">Bildirim tercihleri</div></div>' +
+            '<form class="card" data-form="prefs" id="prefsForm">' +
+            '<label class="check-row"><input type="checkbox" name="email_enabled"' +
+            (prefs.email_enabled ? ' checked' : '') + '>' +
+            '<span><span class="check-title">E-posta bildirimleri</span>' +
+            '<span class="check-hint">Hatırlatmalar e-posta ile gönderilir.</span></span></label>' +
+            '<label class="check-row"><input type="checkbox" name="push_enabled"' +
+            (prefs.push_enabled ? ' checked' : '') + '>' +
+            '<span><span class="check-title">Push bildirimleri</span>' +
+            '<span class="check-hint">Tarayıcı bildirimleri için hazırlık.</span></span></label>' +
+            '<div class="field" style="margin-top:16px"><label class="label" for="quietHours">Sessiz saatler</label>' +
+            '<input class="input" id="quietHours" name="quiet_hours" placeholder="Örn. 22:00-07:00" ' +
+            'value="' + esc(prefs.quiet_hours || '') + '"></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Tercihleri kaydet</button></div>' +
+            '</form>';
+    }
+
+    async function addReminder(form) {
+        const raw = form.elements.due_date.value;
+        if (!raw) return;
+        const due = new Date(raw);
+        if (Number.isNaN(due.getTime())) {
+            showToast('Geçerli bir tarih seçin.', 'error');
+            return;
+        }
+        const payload = {
+            type: form.elements.type.value,
+            title: form.elements.title.value.trim(),
+            due_date: due.toISOString()
+        };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            await api('/api/reminders', { method: 'POST', body: payload });
+            showToast('Hatırlatma eklendi.', 'success');
+            await navigate('/patient/reminders', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function deleteReminder(id) {
+        if (!window.confirm('Bu hatırlatma silinsin mi?')) return;
+        try {
+            await api('/api/reminders/' + encodeURIComponent(id), { method: 'DELETE' });
+            showToast('Hatırlatma silindi.', 'success');
+            await navigate('/patient/reminders', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function savePreferences(form) {
+        const payload = {
+            email_enabled: form.elements.email_enabled.checked,
+            push_enabled: form.elements.push_enabled.checked,
+            quiet_hours: form.elements.quiet_hours.value.trim() || null
+        };
+        try {
+            await api('/api/user/notification-preferences', { method: 'PUT', body: payload });
+            showToast('Tercihler kaydedildi.', 'success');
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Profil                                                             */
+    /* ------------------------------------------------------------------ */
+
+    async function renderProfile() {
+        const response = await api('/api/user/me');
+        const profile = response.data || {};
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Profilim</h2>' +
+            '<p class="page-sub">Kişisel bilgilerinizi güncelleyin.</p></div>' +
+            '<form class="card" data-form="profile" id="profileForm" style="max-width:720px">' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="profileName">Ad Soyad</label>' +
+            '<input class="input" id="profileName" name="full_name" value="' + esc(profile.full_name || '') + '" required></div>' +
+            '<div class="field"><label class="label" for="profileCity">Şehir</label>' +
+            '<input class="input" id="profileCity" name="city" value="' + esc(profile.city || '') + '"></div>' +
+            '<div class="field"><label class="label" for="profileHeight">Boy (cm)</label>' +
+            '<input class="input" id="profileHeight" name="height_cm" type="number" step="0.1" ' +
+            'value="' + esc(profile.height_cm || '') + '"></div>' +
+            '<div class="field"><label class="label" for="profileWeight">Kilo (kg)</label>' +
+            '<input class="input" id="profileWeight" name="weight_kg" type="number" step="0.1" ' +
+            'value="' + esc(profile.weight_kg || '') + '"></div>' +
+            '<div class="field"><label class="label" for="profileBirth">Doğum yılı</label>' +
+            '<input class="input" id="profileBirth" name="birth_year" type="number" ' +
+            'value="' + esc(profile.birth_year || '') + '"></div>' +
+            '<div class="field"><label class="label" for="profileEmail">E-posta</label>' +
+            '<input class="input" id="profileEmail" value="' + esc(profile.email || (state.user && state.user.email) || '') + '" disabled></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Değişiklikleri kaydet</button></div>' +
+            '</form>';
+    }
+
+    async function saveProfile(form) {
+        const payload = {
+            full_name: form.elements.full_name.value.trim(),
+            city: form.elements.city.value.trim(),
+            height_cm: form.elements.height_cm.value === '' ? null : Number(form.elements.height_cm.value),
+            weight_kg: form.elements.weight_kg.value === '' ? null : Number(form.elements.weight_kg.value),
+            birth_year: form.elements.birth_year.value === '' ? null : Number(form.elements.birth_year.value)
+        };
+        try {
+            const response = await api('/api/user/me', { method: 'PUT', body: payload });
+            state.user = response.data || state.user;
+            localStorage.setItem(USER_KEY, JSON.stringify(state.user || {}));
+            updateUserChip();
+            showToast('Profil güncellendi.', 'success');
+            await navigate('/patient/profile', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Hasta bilgi tabanı (RAG)                                           */
+    /* ------------------------------------------------------------------ */
+
+    async function renderPatientRag() {
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Bilgi Tabanım</h2>' +
+            '<p class="page-sub">Sohbetin yalnızca sizin gördüğünüz kaynaklarına metin ekleyin. ' +
+            'Aynı kaynak adı yeniden yüklenirse eski parçalar değiştirilir.</p></div>' +
+            '<form class="card" data-form="rag" id="patientRagForm" style="max-width:820px">' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="patientRagSource">Kaynak adı</label>' +
+            '<input class="input" id="patientRagSource" name="source" required placeholder="Örn. notlarim"></div>' +
+            '<div class="field"><label class="label" for="patientRagChunk">Parça boyutu</label>' +
+            '<input class="input" id="patientRagChunk" name="chunk_size" type="number" value="800" min="100" max="4000"></div>' +
+            '<div class="field"><label class="label" for="patientRagOverlap">Örtüşme</label>' +
+            '<input class="input" id="patientRagOverlap" name="overlap" type="number" value="100" min="0" max="1000"></div>' +
+            '</div><div class="field" style="margin-top:16px"><label class="label" for="patientRagText">Metin</label>' +
+            '<textarea class="input" id="patientRagText" name="text" required placeholder="Eklenacak metin"></textarea></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Bilgi tabanına ekle</button></div>' +
+            '</form><div id="ragResult"></div>';
+    }
+
+    async function ingestPatientRag(form) {
+        const payload = {
+            source: form.elements.source.value.trim(),
+            text: form.elements.text.value.trim(),
+            chunk_size: Number(form.elements.chunk_size.value) || 800,
+            overlap: Number(form.elements.overlap.value) || 0
+        };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/api/rag/ingest', { method: 'POST', body: payload });
+            const data = response.data || {};
+            const box = document.getElementById('ragResult');
+            if (box) {
+                box.innerHTML = '<div class="alert alert-success show">' +
+                    esc(formatNumber(data.chunks) + ' parça eklendi · model: ' + (data.model || '—')) + '</div>';
+            }
+            form.reset();
+            showToast('Bilgi tabanı güncellendi.', 'success');
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Başlat                                                             */
+    /* ------------------------------------------------------------------ */
+
+    function init() {
+        setupShell();
+        if (!state.token) {
+            renderAuth();
+            return;
+        }
+        navigate(window.location.pathname, { push: false });
+    }
+
+    init();
+})();

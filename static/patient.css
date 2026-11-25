@@ -1,0 +1,112 @@
+/* Medical AI Hasta Paneli — admin.css üzerine ek ekran stilleri */
+
+body { background: #f8fafc; }
+
+.sidebar { background: #0f2a3d; }
+.sidebar .brand-logo { background: rgba(16, 185, 129, .16); }
+.nav-item.active { background: rgba(16, 185, 129, .18); color: #fff; }
+
+/* ---------- Giriş / kayıt ekranı ---------- */
+.auth-page {
+    min-height: calc(100vh - 120px);
+    display: grid; place-items: center; padding: 20px;
+}
+.auth-card { width: 100%; max-width: 460px; }
+.auth-tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+.auth-tabs .btn { flex: 1; }
+.auth-card .field { margin-bottom: 14px; }
+.auth-note {
+    margin-top: 18px; padding: 12px 14px; border-radius: 10px;
+    background: var(--primary-soft); color: #1d4ed8; font-size: 12.5px; line-height: 1.5;
+}
+
+/* ---------- Dashboard ---------- */
+.trend-box {
+    background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px; margin-top: 12px;
+}
+.trend-svg { width: 100%; height: 120px; display: block; }
+.trend-labels {
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--text-muted); margin-top: 4px;
+}
+.metric-line { display: flex; align-items: baseline; gap: 6px; }
+.metric-line .value { font-size: 20px; font-weight: 700; }
+.metric-line .unit { font-size: 12px; color: var(--text-muted); }
+
+/* ---------- Sohbet ---------- */
+.chat-layout {
+    display: grid; grid-template-columns: 250px minmax(0, 1fr);
+    gap: 16px; height: calc(100vh - 190px); min-height: 520px;
+}
+.chat-sidebar, .chat-main {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-sm);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.chat-sidebar-head {
+    padding: 14px; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 10px;
+}
+.conv-list { overflow-y: auto; flex: 1; }
+.conv-item {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    padding: 12px 14px; border: none; border-bottom: 1px solid var(--border);
+    background: transparent; color: var(--text); font-size: 13px;
+}
+.conv-item:hover { background: #f8fafc; }
+.conv-item.active { background: var(--primary-soft); color: #1d4ed8; font-weight: 600; }
+.conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-date { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+.chat-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.chat-messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.chat-empty { margin: auto; text-align: center; color: var(--text-muted); }
+.chat-empty .emoji { font-size: 38px; margin-bottom: 10px; }
+.msg { max-width: 82%; padding: 11px 14px; border-radius: 14px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+.msg.assistant { align-self: flex-start; background: #f1f5f9; color: var(--text); border-bottom-left-radius: 4px; }
+.msg-sources { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.source-chip {
+    font-size: 11px; padding: 3px 8px; border-radius: 999px;
+    background: #e0e7ff; color: #3730a3;
+}
+.chat-composer {
+    border-top: 1px solid var(--border); padding: 14px 18px;
+    display: flex; gap: 10px; align-items: flex-end;
+}
+.chat-composer textarea {
+    flex: 1; min-height: 46px; max-height: 160px; resize: vertical;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    font: inherit; font-size: 14px;
+}
+.chat-composer textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+
+/* ---------- Dosya yükleme ---------- */
+.dropzone {
+    border: 2px dashed #cbd5e1; border-radius: 12px; padding: 26px;
+    text-align: center; background: #f8fafc; cursor: pointer;
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
+}
+.dropzone:hover, .dropzone.dragover { border-color: var(--primary); background: var(--primary-soft); }
+.dropzone .emoji { font-size: 30px; }
+.dropzone .hint { font-size: 12px; }
+.extract-box {
+    margin-top: 14px; padding: 12px 14px; border-radius: 10px;
+    background: #f8fafc; border: 1px solid var(--border);
+    font-size: 13px; white-space: pre-wrap; max-height: 240px; overflow-y: auto;
+}
+
+/* ---------- Mobil ---------- */
+@media (max-width: 900px) {
+    .chat-layout { grid-template-columns: 190px minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+    .chat-layout { grid-template-columns: 1fr; height: auto; }
+    .chat-sidebar { max-height: 210px; }
+    .chat-main { height: 560px; }
+    .auth-card { max-width: 100%; }
+}
