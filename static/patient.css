@@ -84,6 +84,28 @@ body { background: #f8fafc; }
     font: inherit; font-size: 14px;
 }
 .chat-composer textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+.chat-attachment {
+    margin: 0 18px 8px; padding: 9px 12px; border: 1px solid #bfdbfe;
+    background: var(--primary-soft); border-radius: 10px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px;
+}
+.chat-attachment .btn { margin-left: auto; }
+.msg-attachment {
+    margin-top: 9px; padding: 9px 10px; border-radius: 9px;
+    background: rgba(255, 255, 255, .72); color: var(--text);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px;
+}
+.msg-attachment details { width: 100%; }
+.msg-attachment summary { cursor: pointer; color: var(--primary); }
+.msg-attachment pre {
+    margin-top: 8px; white-space: pre-wrap; word-break: break-word;
+    font-family: inherit; font-size: 12px; max-height: 180px; overflow-y: auto;
+}
+.saved-metrics {
+    margin-top: 9px; padding: 9px 10px; border-radius: 9px;
+    background: var(--success-soft); color: #047857; font-size: 12.5px;
+    display: flex; flex-direction: column; gap: 4px;
+}
 
 /* ---------- Dosya yükleme ---------- */
 .dropzone {

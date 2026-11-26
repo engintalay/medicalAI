@@ -15,7 +15,8 @@ from pydantic import BaseModel
 
 from config.loader import get_config_loader
 from routes.auth import require_patient
-from services import rag
+from services import rag, vision
+from services.measurements import extract_measurements
 
 router = APIRouter()
 _config = get_config_loader()
@@ -46,8 +47,10 @@ class JSONResponse(_FastJSONResponse):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = ""
     conversation_id: int | None = None
+    upload_id: int | None = None
+    save_metrics: bool = True
 
 
 def _sanitize(text: str, api_key: str) -> str:
@@ -207,11 +210,51 @@ def _save_messages(conn, conversation_id: int, query: str, answer: str):
         )
 
 
-@router.post("/api/chat", summary="RAG destekli sağlık sohbeti")
+ATTACHMENT_PROMPT = (
+    "Bu tıbbi ölçüm görselini/bağı belgesini oku. Varsa şu değerleri açıkça yaz: "
+    "tansiyon (sistolik/diyastolik, mmHg), nabız (bpm), kilo (kg), kan şekeri (mg/dL), "
+    "vücut sıcaklığı (°C) ve SpO2 (%). Yazıları olduğu gibi aktar; okunamayan "
+    "kısımları belirt. Tanı veya öneri ekleme."
+)
+
+
+def _upload_filename(conn, upload_id: int, user_id: int) -> str:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT original_name FROM user_uploads WHERE upload_id = %s AND user_id = %s",
+            (upload_id, user_id),
+        )
+        row = cur.fetchone()
+    return row[0] if row else "dosya"
+
+
+def _save_measurements(conn, user_id: int, text: str) -> list:
+    """Çıkarılan ölçümleri aynı transaction içinde health_metrics'a yazar."""
+    recorded = []
+    for item in extract_measurements(text):
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO health_metrics (user_id, metric_name, value, unit) "
+                "VALUES (%s, %s, %s, %s) RETURNING metric_id, recorded_at",
+                (user_id, item["name"], item["value"], item["unit"]),
+            )
+            row = cur.fetchone()
+        recorded.append({
+            "id": row[0],
+            "name": item["name"],
+            "value": item["value"],
+            "unit": item["unit"],
+            "recorded_at": row[1],
+        })
+    return recorded
+
+
+@router.post("/api/chat", summary="RAG destekli sağlık sohbeti (dosya destekli)")
 async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
     query = (body.message or "").strip()
-    if not query:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Mesaj boş olamaz."})
+    upload_id = body.upload_id
+    if not query and upload_id is None:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Mesaj veya dosya gerekli."})
 
     try:
         settings = _llm_settings()
@@ -220,6 +263,8 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
 
     user_id = int(user["user_id"])
     conn = None
+    attachment = None
+    recorded_metrics = []
     try:
         conn = _config.connect_db()
         conversation_id = body.conversation_id
@@ -233,26 +278,61 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
         else:
             history = []
 
+        extracted_text = ""
+        if upload_id is not None:
+            try:
+                result = await vision.extract_text(
+                    upload_id, user_id, prompt=ATTACHMENT_PROMPT
+                )
+            except vision.VisionError as exc:
+                if conn:
+                    conn.rollback()
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"success": False, "error": str(exc)},
+                )
+            extracted_text = str(result.get("text") or "").strip()
+            filename = _upload_filename(conn, upload_id, user_id)
+            attachment = {
+                "upload_id": upload_id,
+                "filename": filename,
+                "extracted_text": extracted_text,
+                "source": result.get("source"),
+                "model_used": bool(result.get("model_used")),
+            }
+            attachment_block = (
+                f"[YÜKLENEN DOSYA: {filename}]\n{extracted_text[:12000]}"
+            )
+            prompt_query = (query + "\n\n" if query else "") + attachment_block
+            stored_query = (query + "\n\n" if query else "") + attachment_block
+        else:
+            prompt_query = query
+            stored_query = query
+
         try:
             top_k = int(_config.get("rag_top_k", "5") or 5)
         except (TypeError, ValueError):
             top_k = 5
-        sources = rag.search(conn, user_id, query, top_k=top_k, threshold=0.25)
+        retrieval_query = query or extracted_text[:600]
+        sources = rag.search(conn, user_id, retrieval_query, top_k=top_k, threshold=0.25)
 
-        answer = _call_llm(_build_messages(query, sources, history), settings)
+        answer = _call_llm(_build_messages(prompt_query, sources, history), settings)
         if GUARDRAIL not in answer:
             answer = answer.rstrip() + "\n\n" + GUARDRAIL
 
-        # LLM başarılıysa mesajları kaydet (önce yazılmaz).
+        # LLM başarılıysa mesajları ve doğrulanmış ölçümleri aynı transaction'da kaydet.
         if conversation_id is None:
+            title_source = query or (attachment["filename"] if attachment else prompt_query)
             with conn.cursor() as cur:
                 cur.execute(
                     "INSERT INTO conversations (user_id, title) VALUES (%s, %s) "
                     "RETURNING conversation_id",
-                    (user_id, query[:60]),
+                    (user_id, title_source[:60]),
                 )
                 conversation_id = cur.fetchone()[0]
-        _save_messages(conn, conversation_id, query, answer)
+        if attachment and body.save_metrics:
+            recorded_metrics = _save_measurements(conn, user_id, extracted_text)
+        _save_messages(conn, conversation_id, stored_query, answer)
         conn.commit()
 
         return JSONResponse(status_code=200, content={
@@ -264,8 +344,14 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
                     for item in sources
                 ],
                 "conversation_id": conversation_id,
+                "attachment": attachment,
+                "recorded_metrics": recorded_metrics,
             },
         })
+    except vision.VisionError as exc:
+        if conn:
+            conn.rollback()
+        return JSONResponse(status_code=exc.status_code, content={"success": False, "error": str(exc)})
     except ValueError as exc:
         if conn:
             conn.rollback()

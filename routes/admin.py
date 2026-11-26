@@ -253,6 +253,7 @@ async def update_config(request: Request, key: str, value: str = None):
         'llm_max_tokens', 'llm_timeout',
         'llm_vision_supported', 'vision_llm_enabled',
         'vision_llm_provider', 'vision_llm_model', 'vision_llm_api_key', 'vision_llm_base_url',
+        'vision_max_tokens', 'vision_timeout',
         'embedding_model', 'rag_top_k', 'rag_chunk_size', 'rag_overlap',
         'upload_dir', 'max_upload_mb', 'admin_default_password', 'jwt_secret',
     }

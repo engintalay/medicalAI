@@ -231,6 +231,8 @@ def main() -> int:
         ("vision_llm_model", os.getenv("VISION_LLM_MODEL", ""), "Vision LLM model adı"),
         ("vision_llm_api_key", os.getenv("VISION_LLM_API_KEY", ""), "Vision LLM API anahtarı"),
         ("vision_llm_base_url", os.getenv("VISION_LLM_BASE_URL", ""), "Vision LLM API adresi (opsiyonel)"),
+        ("vision_max_tokens", os.getenv("VISION_MAX_TOKENS", "1024"), "Vision LLM maksimum cevap token sayısı"),
+        ("vision_timeout", os.getenv("VISION_TIMEOUT", "180"), "Vision LLM istek zaman aşımı (saniye)"),
         ("embedding_model", os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"), "Yerel Sentence-Transformers embedding modeli"),
         ("rag_top_k", os.getenv("RAG_TOP_K", "5"), "RAG sonuç sayısı"),
         ("rag_chunk_size", os.getenv("RAG_CHUNK_SIZE", "500"), "RAG chunk boyutu"),

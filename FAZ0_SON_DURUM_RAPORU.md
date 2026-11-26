@@ -339,7 +339,7 @@ sudo systemctl status medical-ai
 ## 3. API özeti
 
 - Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics`,
-  `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/chat`,
+  `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/chat` (opsiyonel dosya),
   `/api/conversations`, `/api/reminders`, `/api/notifications`,
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
@@ -376,6 +376,9 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   medgemma gibi rol sırasını zorunlu kılan Jinja şablonlarıyla uyumluluk sağlanır.
 - `/admin/config` üzerinden `llm_max_tokens` (varsayılan 256) ve `llm_timeout`
   (varsayılan 180 saniye) ayarlanabilir; yerel 27B modellerin cevap süresi buna göre belirlenir.
+- Vision için `vision_max_tokens` (1024) ve `vision_timeout` (180 saniye) ayrıca ayarlanabilir.
+- Sohbete eklenen dosya vision LLM ile okunur; tansiyon, nabız, kilo, glukoz, sıcaklık
+  ve SpO2 değerleri yalnızca geçerli aralıktaysa `health_metrics` tablosuna kaydedilir.
 - Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
   özel RAG parçaları) daima JWT'deki `user_id` ile filtrelenir.
 - Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
@@ -383,10 +386,10 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 64 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 70 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
-  LLM token/timeout ayarları).
+  LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -413,7 +416,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | Adres | Ekran |
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
-| `/patient/chat` | RAG destekli sohbet, konuşma geçmişi, kaynak göstergeleri |
+| `/patient/chat` | RAG sohbeti, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
 | `/patient/metrics` | Sağlık metriği ekleme ve geçmiş tablosu |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
@@ -447,5 +450,7 @@ POST /admin/api/users 201 → yeni hasta girişi 200
 PATCH /admin/api/users/{id} 200 → pasif giriş 401, tekrar aktif 200
 GET /admin/users 200
 POST /api/chat 200 (medgemma, tek system mesajı, 56.9 sn)
+POST /api/uploads 200 → POST /api/chat upload_id ile 200 (görsel okuma + metin yanıtı)
+Örnek tansiyon görseli: 128/82 mmHg, 74 bpm → 3 metrik kaydedildi; toplam 117.4 sn
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

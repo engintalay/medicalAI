@@ -207,10 +207,18 @@ def _call_completions(
         endpoint_base += "/v1"
     url = endpoint_base + "/chat/completions"
 
+    try:
+        max_tokens = int(_config.get("vision_max_tokens", "1024") or 1024)
+    except (TypeError, ValueError):
+        max_tokens = 1024
+    try:
+        timeout = float(_config.get("vision_timeout", "180") or 180)
+    except (TypeError, ValueError):
+        timeout = 180
     body = {
         "model": model,
         "temperature": 0,
-        "max_tokens": 4096,
+        "max_tokens": max(64, min(max_tokens, 8192)),
         "messages": [
             {"role": "system", "content": "Sen bir belge metni çıkarma asistanısın."},
             {
@@ -234,7 +242,7 @@ def _call_completions(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=60) as response:
+        with urlopen(request, timeout=max(30, min(timeout, 600))) as response:
             raw = response.read(8 * 1024 * 1024)
     except HTTPError as exc:
         detail = ""

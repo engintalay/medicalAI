@@ -123,6 +123,8 @@ INSERT INTO system_config (key, value, description) VALUES
 ('llm_api_key', '', 'Ana LLM API anahtarı (API key buraya gelecek)'),
 ('llm_max_tokens', '256', 'Ana LLM maksimum cevap token sayısı'),
 ('llm_timeout', '180', 'Ana LLM istek zaman aşımı (saniye)'),
+('vision_max_tokens', '1024', 'Vision LLM maksimum cevap token sayısı'),
+('vision_timeout', '180', 'Vision LLM istek zaman aşımı (saniye)'),
 ('embedding_model', 'all-MiniLM-L6-v2', 'Embedding model adı (CPU uyumlu varsayılan)'),
 ('rag_top_k', '5', 'RAG sonuc sayısı'),
 ('upload_dir', '/uploads', 'Dosya yükleme dizini'),

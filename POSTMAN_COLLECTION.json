@@ -976,10 +976,10 @@
             "chat"
           ]
         },
-        "description": "RAG destekli sağlık sohbeti",
+        "description": "RAG destekli sohbet; upload_id ile dosya okuma ve otomatik ölçüm kaydı",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"message\": \"Tahlilimdeki hemoglobin ne anlama geliyor?\"\n}",
+          "raw": "{\n  \"message\": \"Bu ölçümü yorumlar mısın?\",\n  \"upload_id\": 1,\n  \"save_metrics\": true\n}",
           "options": {
             "raw": {
               "language": "json"

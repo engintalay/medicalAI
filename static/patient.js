@@ -22,7 +22,7 @@
         user: readUser(),
         page: 'dashboard',
         authMode: 'login',
-        chat: { conversations: [], activeId: null, messages: [] },
+        chat: { conversations: [], activeId: null, messages: [], upload: null },
         toastTimer: null
     };
 
@@ -169,6 +169,14 @@
         if (userName) userName.textContent = name;
         if (userEmail) userEmail.textContent = user.email || '';
         if (userAvatar) userAvatar.textContent = (name.charAt(0) || 'H').toUpperCase();
+    }
+
+    function metricLabel(name) {
+        const labels = {
+            sistolik: 'Sistolik', diyastolik: 'Diyastolik', 'nabız': 'Nabız',
+            weight: 'Kilo', glucose: 'Kan şekeri', temperature: 'Sıcaklık', spo2: 'SpO2'
+        };
+        return labels[name] || name;
     }
 
     function statCard(icon, iconClass, value, label) {
@@ -359,6 +367,19 @@
                 return;
             }
 
+            const chatAttachBtn = event.target.closest('#chatAttachBtn');
+            if (chatAttachBtn) {
+                const input = document.getElementById('chatFile');
+                if (input) input.click();
+                return;
+            }
+
+            const chatRemoveAttachment = event.target.closest('#chatRemoveAttachment');
+            if (chatRemoveAttachment) {
+                clearChatAttachment();
+                return;
+            }
+
             const exportBtn = event.target.closest('[data-export]');
             if (exportBtn) {
                 exportData(exportBtn.getAttribute('data-export'));
@@ -411,6 +432,12 @@
             } else if (name === 'chat') {
                 event.preventDefault();
                 sendChat(form);
+            }
+        });
+
+        document.addEventListener('change', function (event) {
+            if (event.target && event.target.id === 'chatFile') {
+                uploadChatFile(event.target.files && event.target.files[0]);
             }
         });
 
@@ -588,7 +615,23 @@
                 return '<span class="source-chip">' + esc(source.source || 'kaynak') +
                     ' · ' + esc(formatNumber(source.score, 2)) + '</span>';
             }).join('');
+            const attachment = msg.attachment
+                ? '<div class="msg-attachment"><span>📎 ' + esc(msg.attachment.filename || 'dosya') + '</span>' +
+                  '<span class="badge badge-success">Okundu</span>' +
+                  (msg.attachment.extracted_text
+                    ? '<details><summary>Çıkarılan metni göster</summary><pre>' +
+                      esc(msg.attachment.extracted_text) + '</pre></details>'
+                    : '') + '</div>'
+                : '';
+            const metrics = (msg.recorded_metrics || []).length
+                ? '<div class="saved-metrics"><strong>✅ Ölçümler kaydedildi</strong>' +
+                  (msg.recorded_metrics || []).map(function (item) {
+                      return '<span>' + esc(metricLabel(item.name)) + ': ' +
+                          esc(formatNumber(item.value, 2)) + ' ' + esc(item.unit || '') + '</span>';
+                  }).join('') + '</div>'
+                : '';
             return '<div class="msg ' + esc(msg.role) + '">' + esc(msg.content) +
+                attachment + metrics +
                 (sources ? '<div class="msg-sources">' + sources + '</div>' : '') + '</div>';
         }).join('');
         box.scrollTop = box.scrollHeight;
@@ -611,6 +654,7 @@
         state.chat.conversations = response.data || [];
         state.chat.activeId = null;
         state.chat.messages = [];
+        state.chat.upload = null;
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Sohbeti</h2>' +
@@ -624,8 +668,11 @@
             '<div class="chat-head"><span class="card-title">Sohbet</span>' +
             '<span class="hint">Yanıtlar tanı değildir</span></div>' +
             '<div class="chat-messages" id="chatMessages"></div>' +
+            '<div id="chatAttachment" class="chat-attachment hidden"></div>' +
             '<form class="chat-composer" data-form="chat" id="chatForm">' +
-            '<textarea id="chatInput" name="message" placeholder="Mesajınızı yazın... (Enter: gönder)" required></textarea>' +
+            '<input type="file" id="chatFile" class="hidden" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain">' +
+            '<button type="button" class="btn btn-secondary" id="chatAttachBtn" title="Dosya ekle">📎</button>' +
+            '<textarea id="chatInput" name="message" placeholder="Mesajınızı yazın veya ölçüm resmi ekleyin... (Enter: gönder)"></textarea>' +
             '<button type="submit" class="btn btn-primary" id="chatSendBtn">Gönder</button>' +
             '</form></div></div>';
 
@@ -656,30 +703,108 @@
         if (input) input.focus();
     }
 
+    function renderChatAttachment() {
+        const box = document.getElementById('chatAttachment');
+        if (!box) return;
+        const item = state.chat.upload;
+        if (!item) {
+            box.className = 'chat-attachment hidden';
+            box.innerHTML = '';
+            return;
+        }
+        box.className = 'chat-attachment';
+        box.innerHTML = '<span>📎 <strong>' + esc(item.filename) + '</strong></span>' +
+            '<span class="hint">' + (item.uploading ? 'Yükleniyor...' : 'Gönderildiğinde okunacak') + '</span>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="chatRemoveAttachment">Kaldır</button>';
+    }
+
+    function clearChatAttachment() {
+        state.chat.upload = null;
+        const input = document.getElementById('chatFile');
+        if (input) input.value = '';
+        renderChatAttachment();
+    }
+
+    async function uploadChatFile(file) {
+        if (!file) return;
+        state.chat.upload = { id: null, filename: file.name, uploading: true };
+        renderChatAttachment();
+        try {
+            const data = new FormData();
+            data.append('file', file);
+            const response = await fetch('/api/uploads', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + state.token },
+                body: data
+            });
+            if (response.status === 401) {
+                clearAuth();
+                renderAuth();
+                return;
+            }
+            const text = await response.text();
+            const payload = text ? JSON.parse(text) : null;
+            if (!response.ok || !payload || !payload.data || !payload.data.id) {
+                throw new Error(extractError(payload, response.status));
+            }
+            state.chat.upload = {
+                id: payload.data.id,
+                filename: payload.data.filename || file.name,
+                uploading: false
+            };
+            showToast('Dosya yüklendi. Gönderdiğinizde okunacak.', 'success');
+        } catch (error) {
+            state.chat.upload = null;
+            showToast(error.message, 'error');
+        } finally {
+            const input = document.getElementById('chatFile');
+            if (input) input.value = '';
+            renderChatAttachment();
+        }
+    }
+
     async function sendChat(form) {
         const message = form.elements.message.value.trim();
-        if (!message) return;
+        const attachment = state.chat.upload;
+        if (!message && !attachment) return;
+        if (attachment && attachment.uploading) {
+            showToast('Dosya yükleniyor, birkaç saniye bekleyin.', 'info');
+            return;
+        }
         const button = document.getElementById('chatSendBtn');
         const isNew = state.chat.activeId === null;
-        state.chat.messages.push({ role: 'user', content: message });
+        state.chat.messages.push({
+            role: 'user',
+            content: message || (attachment ? 'Bu dosyayı incele.' : ''),
+            attachment: attachment ? { filename: attachment.filename, extracting: true } : null
+        });
         renderMessages();
         form.elements.message.value = '';
         if (button) button.disabled = true;
         try {
+            const payload = { message: message };
+            if (state.chat.activeId !== null) payload.conversation_id = state.chat.activeId;
+            if (attachment && attachment.id !== null) payload.upload_id = attachment.id;
             const response = await api('/api/chat', {
                 method: 'POST',
-                body: { message: message, conversation_id: state.chat.activeId }
+                body: payload
             });
             const data = response.data || {};
             state.chat.activeId = data.conversation_id || state.chat.activeId;
+            // Kullanıcı mesajını sunucudan gelen gerçek ek bilgilerle güncelle.
+            state.chat.messages[state.chat.messages.length - 1].attachment = data.attachment || null;
             state.chat.messages.push({
-                role: 'assistant', content: data.answer || '', sources: data.sources || []
+                role: 'assistant',
+                content: data.answer || '',
+                sources: data.sources || [],
+                recorded_metrics: data.recorded_metrics || []
             });
             if (isNew && state.chat.activeId !== null) {
                 const list = await api('/api/conversations');
                 state.chat.conversations = list.data || [];
                 renderConversationList();
             }
+            clearChatAttachment();
             renderMessages();
         } catch (error) {
             if (error instanceof AuthError) return;
