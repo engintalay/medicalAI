@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -17,7 +18,7 @@ from pydantic import BaseModel
 from config.loader import get_config_loader
 from routes.auth import require_patient
 from services import rag, vision
-from services.measurements import extract_measurements
+from services.measurements import extract_measurement_date, extract_measurements
 
 router = APIRouter()
 _config = get_config_loader()
@@ -212,10 +213,14 @@ def _save_messages(conn, conversation_id: int, query: str, answer: str):
 
 
 ATTACHMENT_PROMPT = (
-    "Bu tıbbi ölçüm görselini/bağı belgesini oku. Varsa şu değerleri açıkça yaz: "
-    "tansiyon (sistolik/diyastolik, mmHg), nabız (bpm), kilo (kg), kan şekeri (mg/dL), "
-    "vücut sıcaklığı (°C) ve SpO2 (%). Yazıları olduğu gibi aktar; okunamayan "
-    "kısımları belirt. Tanı veya öneri ekleme."
+    "Bu tıbbi ölçüm görselini/bağı belgesini dikkatle oku. Tansiyon cihazıysa: "
+    "en üst köşedeki gg/aa tarihi ölçüm tarihidir; SYS etiketi yanındaki büyük üst sayı "
+    "sistolik, DIA yanındaki orta sayı diyastolik, PULSE yanındaki alt sayı nabızdır. "
+    "Etiketleri sayılarla birebir eşleştir; sayıları yer değiştirme. Ekranda yıl yoksa "
+    "yıl uydurma. Varsa ilaç adı, etken madde, kullanma talimatı, doz, uyarılar, yan "
+    "etkiler ve etkileşimler başlıklarını koru. Önce şu satırları ver: "
+    "'Tarih: gg/aa', 'Sistolik: ### mmHg', 'Diyastolik: ## mmHg', 'Nabız: ## bpm'. "
+    "Ardından kalan metni aktar. Tanı veya öneri ekleme."
 )
 
 
@@ -232,12 +237,13 @@ def _upload_filename(conn, upload_id: int, user_id: int) -> str:
 def _save_measurements(conn, user_id: int, text: str) -> list:
     """Çıkarılan ölçümleri aynı transaction içinde health_metrics'a yazar."""
     recorded = []
+    measured_at = extract_measurement_date(text) or datetime.now(timezone.utc)
     for item in extract_measurements(text):
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO health_metrics (user_id, metric_name, value, unit) "
-                "VALUES (%s, %s, %s, %s) RETURNING metric_id, recorded_at",
-                (user_id, item["name"], item["value"], item["unit"]),
+                "INSERT INTO health_metrics (user_id, metric_name, value, unit, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING metric_id, recorded_at",
+                (user_id, item["name"], item["value"], item["unit"], measured_at),
             )
             row = cur.fetchone()
         recorded.append({

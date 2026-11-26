@@ -53,6 +53,9 @@ def test_extraction_result_is_persisted(client, patient_headers, cfg):
         assert item["extracted_text"] == "Kalici metin sonucu"
         assert item["extracted_at"] is not None
         assert item["extraction_source"] == "local_text"
+        exported = client.get("/api/user/export?format=csv", headers=patient_headers)
+        assert exported.status_code == 200
+        assert "Kalici metin sonucu" in exported.content.decode("utf-8-sig")
     finally:
         client.delete(f"/api/uploads/{upload_id}", headers=patient_headers)
         cfg.set("vision_llm_enabled", old or "false")

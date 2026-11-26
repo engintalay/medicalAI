@@ -5,6 +5,7 @@ sayıları doğrular ve health_metrics şemasına uygun normalize eder.
 """
 
 import re
+from datetime import date, datetime, timezone
 
 
 def _to_float(value: str) -> float:
@@ -13,6 +14,34 @@ def _to_float(value: str) -> float:
 
 def _valid(value: float, low: float, high: float) -> bool:
     return low <= value <= high
+
+
+def extract_measurement_date(text: str, fallback: datetime | None = None) -> datetime | None:
+    """Metindeki gg/aa[/yyyy] tarihinden ölçüm zamanı çıkarır.
+
+    Görselde yıl yoksa mevcut yıl (veya fallback yılı) kullanılır; saat bilgisi
+    yoksa gece yarısı kabul edilir. Tansiyon gibi 117/75 kalıpları tarih sayılmaz.
+    """
+    raw = (text or "").replace("\u00a0", " ")
+    for match in re.finditer(r"(?<!\d)(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?!\d)", raw):
+        day, month = int(match.group(1)), int(match.group(2))
+        if not (1 <= day <= 31 and 1 <= month <= 12):
+            continue
+        year_raw = match.group(3)
+        if year_raw:
+            year = int(year_raw)
+            if year < 100:
+                year += 2000
+        elif fallback is not None:
+            year = fallback.year
+        else:
+            year = datetime.now(timezone.utc).year
+        try:
+            parsed_date = date(year, month, day)
+        except ValueError:
+            continue
+        return datetime(parsed_date.year, parsed_date.month, parsed_date.day, tzinfo=timezone.utc)
+    return None
 
 
 def extract_measurements(text: str) -> list:

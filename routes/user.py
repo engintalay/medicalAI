@@ -3,6 +3,7 @@
 # Tüm sorgular JWT'deki user_id ile filtrelenir; veri yoksa boş liste döner.
 
 import csv
+import html
 import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -96,13 +97,17 @@ def _metric_history(conn, user_id: int) -> list:
 def _uploads(conn, user_id: int) -> list:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT original_name, upload_date, size_bytes FROM user_uploads "
-            "WHERE user_id = %s ORDER BY upload_date DESC LIMIT 200",
+            "SELECT original_name, upload_date, size_bytes, extracted_text, extracted_at, extraction_source "
+            "FROM user_uploads WHERE user_id = %s ORDER BY upload_date DESC LIMIT 200",
             (user_id,),
         )
         rows = cur.fetchall()
     return [
-        {"name": r[0], "date": _json_value(r[1]), "size": r[2] or 0}
+        {
+            "name": r[0], "date": _json_value(r[1]), "size": r[2] or 0,
+            "extracted_text": r[3] or "", "extracted_at": _json_value(r[4]),
+            "extraction_source": r[5] or "",
+        }
         for r in rows
     ]
 
@@ -278,6 +283,13 @@ def _build_pdf(data: dict) -> bytes:
     if data["uploads"]:
         for item in data["uploads"][:60]:
             story.append(Paragraph(f"{item['date']} — {item['name']} ({item['size']} bayt)", normal))
+            extracted = str(item.get("extracted_text") or "").strip()
+            if extracted:
+                safe = html.escape(extracted[:6000]).replace("\n", "<br/>")
+                story.append(Paragraph(
+                    f"<b>Analiz metni ({item.get('extracted_at') or 'tarih yok'}):</b><br/>{safe}",
+                    normal,
+                ))
     else:
         story.append(Paragraph("Kayıt yok.", normal))
     story.append(Spacer(1, 10))
@@ -308,6 +320,9 @@ def _build_csv(data: dict) -> bytes:
         writer.writerow(["Sağlık Metrikleri", f"{item['name']} ({item['unit']}) {item['date']}", item["value"]])
     for item in data["uploads"]:
         writer.writerow(["Dosyalar", item["date"], item["name"]])
+        if str(item.get("extracted_text") or "").strip():
+            writer.writerow(["Dosya Analizi", item.get("extracted_at") or "", item["extracted_text"]])
+            writer.writerow(["Dosya Analizi Kaynağı", item.get("extraction_source") or "", item["name"]])
     for item in data["reminders"]:
         writer.writerow(["Hatırlatmalar", item["due_date"], f"{item['type']}: {item['title']}"])
     return ("\ufeff" + buffer.getvalue()).encode("utf-8")

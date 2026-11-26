@@ -35,6 +35,17 @@ ALLOWED_TYPES = {
     "text/plain": {".txt"},
 }
 
+UPLOAD_EXTRACT_PROMPT = (
+    "Bu tıbbi ölçüm görselini/bağı belgesini dikkatle oku. Tansiyon cihazıysa: "
+    "en üst köşedeki gg/aa tarihi ölçüm tarihidir; SYS etiketi yanındaki büyük üst sayı "
+    "sistolik, DIA yanındaki orta sayı diyastolik, PULSE yanındaki alt sayı nabızdır. "
+    "Etiketleri sayılarla birebir eşleştir; sayıları yer değiştirme. Ekranda yıl yoksa "
+    "yıl uydurma. Varsa ilaç adı, etken madde, kullanma talimatı, doz, uyarılar, yan "
+    "etkiler ve etkileşimler başlıklarını koru. Önce şu satırları ver: "
+    "'Tarih: gg/aa', 'Sistolik: ### mmHg', 'Diyastolik: ## mmHg', 'Nabız: ## bpm'. "
+    "Ardından kalan metni aktar. Tanı veya öneri ekleme."
+)
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -208,7 +219,7 @@ async def extract_upload_text(
             upload_id,
             int(user["user_id"]),
             api_key=api_key,
-            prompt=prompt,
+            prompt=prompt or UPLOAD_EXTRACT_PROMPT,
         )
     except VisionError as exc:
         return JSONResponse(
