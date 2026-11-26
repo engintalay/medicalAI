@@ -44,7 +44,7 @@ class UrlImportRequest(BaseModel):
 RAG_FILE_PROMPT = (
     "Bu ilaç prospektüsü/belgesindeki metni olduğu gibi çıkar. İlaç adı, etken madde, "
     "kullanma talimatı, doz, uyarılar, yan etkiler ve etkileşimler varsa başlıklarını koru. "
-    "Özetleme veya yorum ekleme."
+    "Çıktıyı Markdown başlık, liste ve tabloları kullanarak düzenle. Özetleme veya yorum ekleme."
 )
 
 

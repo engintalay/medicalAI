@@ -386,6 +386,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 - Vision için `vision_max_tokens` (1024) ve `vision_timeout` (180 saniye) ayrıca ayarlanabilir.
 - Tansiyon görselleri etiket bazlı promptla okunur; `gg/aa` ölçüm tarihi çıkarılıp
   metriklerin `recorded_at` alanına işlenir. CSV/PDF export'una dosya analiz metni eklenir.
+- Vision çıktıları Markdown başlık/liste/tablo formatında istenir; hasta panelinde
+  ham HTML çalıştırmayan güvenli Markdown görüntüleyiciyle gösterilir.
 - LLM ve embedding çağrıları `asyncio.to_thread` ile event loop dışına alınır; uzun
   sohbet/RAG işlemleri sırasında `/health`, dashboard ve diğer hizmetler paralel yanıt verir.
 - Sohbete eklenen dosya vision LLM ile okunur; tansiyon, nabız, kilo, glukoz, sıcaklık
@@ -401,7 +403,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 88 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 90 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -409,7 +411,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   ölçüm tarihi ve sistem giriş zamanının ayrı saklanması, RAG PDF/TXT yükleme,
   prospektus.co ilaç arama ve URL içe aktarma, sohbet arama/arşiv/geri yükleme/silme,
   dosya önizleme ve kalıcı metin çıkarma sonuçları, ölçüm tarihi çıkarma ve export,
-  LLM Advanced ayar sekmesi, thinking kapalı ve reasoning yanıtı yedeklemesi).
+  LLM Advanced ayar sekmesi, thinking kapalı ve reasoning yanıtı yedeklemesi,
+  vision Markdown çıktısı ve güvenli Markdown görüntüleme).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)

@@ -136,7 +136,7 @@ def _static_tag(filename: str) -> str:
 def _render_page(filename: str) -> HTMLResponse:
     html = Path("templates") / filename
     content = html.read_text(encoding="utf-8")
-    for asset in ("admin.css", "admin.js", "login.js", "patient.css", "patient.js", "dialog.js"):
+    for asset in ("admin.css", "admin.js", "login.js", "patient.css", "patient.js", "dialog.js", "markdown.js"):
         content = content.replace(
             "/static/" + asset + '"',
             "/static/" + asset + "?v=" + _static_tag(asset) + '"',

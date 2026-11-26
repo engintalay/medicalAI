@@ -727,8 +727,9 @@
                 ? '<div class="msg-attachment"><span>📎 ' + esc(msg.attachment.filename || 'dosya') + '</span>' +
                   '<span class="badge badge-success">Okundu</span>' +
                   (msg.attachment.extracted_text
-                    ? '<details><summary>Çıkarılan metni göster</summary><pre>' +
-                      esc(msg.attachment.extracted_text) + '</pre></details>'
+                    ? '<details><summary>Çıkarılan metni göster</summary><div class="markdown-body">' +
+                      (window.MedicalMarkdown ? MedicalMarkdown.render(msg.attachment.extracted_text) : esc(msg.attachment.extracted_text)) +
+                      '</div></details>'
                     : '') + '</div>'
                 : '';
             const metrics = (msg.recorded_metrics || []).length
@@ -1421,8 +1422,9 @@
         overlay.innerHTML = '<div class="preview-card"><div class="preview-head">' +
             '<strong>Çıkarılan metin · ' + esc(item.filename) + '</strong>' +
             '<button type="button" class="btn btn-secondary btn-sm" data-preview-close>Kapat</button></div>' +
-            '<div class="preview-body"><pre class="preview-text"></pre></div></div>';
-        overlay.querySelector('pre').textContent = item.extracted_text;
+            '<div class="preview-body"><div class="markdown-body"></div></div></div>';
+        overlay.querySelector('.markdown-body').innerHTML = window.MedicalMarkdown
+            ? MedicalMarkdown.render(item.extracted_text) : '<pre>' + esc(item.extracted_text) + '</pre>';
         overlay.querySelector('[data-preview-close]').addEventListener('click', function () { closePreview(overlay); });
         overlay.addEventListener('click', function (event) {
             if (event.target === overlay) closePreview(overlay);
@@ -1497,7 +1499,8 @@
                 item.extraction_source = data.source || '';
             }
             renderUploadsTable();
-            if (box) box.innerHTML = '<div class="extract-box">' + esc(text) + '</div>';
+            if (box) box.innerHTML = '<div class="extract-box markdown-body">' +
+                (window.MedicalMarkdown ? MedicalMarkdown.render(text) : esc(text)) + '</div>';
             showToast('Metin çıkarıldı ve kaydedildi.', 'success');
             if (openResult) showUploadText(id);
         } catch (error) {

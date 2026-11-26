@@ -233,7 +233,9 @@ ATTACHMENT_PROMPT = (
     "yıl uydurma. Varsa ilaç adı, etken madde, kullanma talimatı, doz, uyarılar, yan "
     "etkiler ve etkileşimler başlıklarını koru. Önce şu satırları ver: "
     "'Tarih: gg/aa', 'Sistolik: ### mmHg', 'Diyastolik: ## mmHg', 'Nabız: ## bpm'. "
-    "Ardından kalan metni aktar. Tanı veya öneri ekleme."
+    "Ardından kalan metni Markdown başlık, liste ve tabloları kullanarak düzenle. "
+    "İlaç bilgileri görselde yoksa ilaç başlıkları ekleme ve yer tutucu uydurma. "
+    "Tanı veya öneri ekleme."
 )
 
 

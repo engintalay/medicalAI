@@ -38,7 +38,8 @@ HTTP_HEADERS = {
 DEFAULT_PROMPT = (
     "Aşağıdaki tıbbi belge/görseldeki yazılı metni olduğu gibi, "
     "varsa sayfa sayfa çıkar. Tanı koyma veya yorum ekleme. "
-    "Okunamayan kısımları belirt. Sadece çıkarılan metni döndür."
+    "Okunamayan kısımları belirt. Çıktıyı Markdown başlık, liste ve tabloları kullanarak düzenle. "
+    "Görselde olmayan başlık veya yer tutucu uydurma."
 )
 
 
