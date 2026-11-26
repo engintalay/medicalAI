@@ -1340,14 +1340,17 @@
             maxTime += 86400000;
         }
         const x = function (time) { return margin.left + ((time - minTime) / (maxTime - minTime)) * plotWidth; };
+        const showPercentAxis = series.some(function (item) { return item.points.length > 2; });
         let svg = '<svg class="metrics-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" ' +
             'role="img" aria-label="Seçili metriklerin ölçüm tarihine göre grafiği">';
         for (let index = 0; index <= 4; index += 1) {
             const y = margin.top + (plotHeight * index) / 4;
             svg += '<line x1="' + margin.left + '" y1="' + y + '" x2="' + (width - margin.right) +
-                '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"/>' +
-                '<text x="' + (margin.left - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
-                'class="chart-axis-label">' + (100 - index * 25) + '%</text>';
+                '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"/>';
+            if (showPercentAxis) {
+                svg += '<text x="' + (margin.left - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
+                    'class="chart-axis-label">' + (100 - index * 25) + '%</text>';
+            }
         }
         for (let index = 0; index <= 4; index += 1) {
             const time = minTime + ((maxTime - minTime) * index) / 4;
@@ -1370,10 +1373,27 @@
                 'stroke-linejoin="round" stroke-linecap="round" points="' + points + '"/>';
             item.points.forEach(function (point) {
                 const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
-                const title = esc(formatDateTime(point.time) + ' · ' + formatNumber(point.value, 2) + ' ' + point.unit);
-                svg += '<circle cx="' + x(point.time).toFixed(2) + '" cy="' + y.toFixed(2) + '" r="3.5" ' +
-                    'fill="' + color + '"><title>' + title + '</title></circle>';
+                const detail = formatDateTime(point.time) + ' · ' + formatNumber(point.value, 2) + ' ' + point.unit;
+                svg += '<circle cx="' + x(point.time).toFixed(2) + '" cy="' + y.toFixed(2) + '" r="4.5" ' +
+                    'fill="' + color + '" class="chart-point" tabindex="0" data-chart-point="1" ' +
+                    'data-detail="' + esc(detail) + '"><title>' + esc(detail) + '</title></circle>';
             });
+            if (item.points.length === 1) {
+                const point = item.points[0];
+                const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
+                svg += '<text x="' + x(point.time).toFixed(2) + '" y="' + (y - 12).toFixed(2) +
+                    '" text-anchor="middle" fill="' + color + '" class="chart-value-label">' +
+                    esc(formatNumber(point.value, 2) + ' ' + point.unit) + '</text>';
+            } else if (item.points.length === 2) {
+                item.points.forEach(function (point, pointIndex) {
+                    const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
+                    const anchor = pointIndex === 0 ? 'end' : 'start';
+                    const labelX = x(point.time) + (pointIndex === 0 ? -9 : 9);
+                    svg += '<text x="' + labelX.toFixed(2) + '" y="' + (y - 9).toFixed(2) +
+                        '" text-anchor="' + anchor + '" fill="' + color + '" class="chart-value-label">' +
+                        esc(formatNumber(point.value, 2) + ' ' + point.unit) + '</text>';
+                });
+            }
             const last = item.points[item.points.length - 1];
             legend.push('<div class="chart-legend-item"><span class="chart-legend-color" style="background:' + color + '"></span>' +
                 '<strong>' + esc(item.name) + '</strong><span>' + esc(last.unit || '—') + '</span>' +
@@ -1381,9 +1401,45 @@
                 ' · son ' + esc(formatNumber(last.value, 2)) + '</span></div>');
         });
         svg += '</svg>';
-        container.innerHTML = svg + '<div class="chart-legend">' + legend.join('') + '</div>' +
+        container.innerHTML = svg + '<div class="chart-tooltip hidden" id="metricsChartTooltip"></div>' +
+            '<div class="chart-legend">' + legend.join('') + '</div>' +
             '<div class="card-note">Farklı birimleri karşılaştırmak için her metrik kendi min–maks aralığına normalize edildi. ' +
             'Noktaların üzerine gelerek tarih ve ölçüm değerini görebilirsin.</div>';
+
+        const tooltip = document.getElementById('metricsChartTooltip');
+        function showTooltip(event, circle) {
+            if (!tooltip) return;
+            tooltip.textContent = circle.getAttribute('data-detail') || '';
+            tooltip.classList.remove('hidden');
+            const rect = container.getBoundingClientRect();
+            let left = event.clientX - rect.left + 12;
+            let top = event.clientY - rect.top - 38;
+            if (left + tooltip.offsetWidth > rect.width - 8) {
+                left = event.clientX - rect.left - tooltip.offsetWidth - 12;
+            }
+            if (top < 0) top = event.clientY - rect.top + 14;
+            tooltip.style.left = Math.max(8, left) + 'px';
+            tooltip.style.top = Math.max(8, top) + 'px';
+        }
+        container.querySelectorAll('[data-chart-point]').forEach(function (circle) {
+            circle.addEventListener('mouseenter', function (event) { showTooltip(event, circle); });
+            circle.addEventListener('mousemove', function (event) { showTooltip(event, circle); });
+            circle.addEventListener('mouseleave', function () {
+                if (tooltip) tooltip.classList.add('hidden');
+            });
+            circle.addEventListener('focus', function () {
+                if (!tooltip) return;
+                const rect = container.getBoundingClientRect();
+                const pointRect = circle.getBoundingClientRect();
+                tooltip.textContent = circle.getAttribute('data-detail') || '';
+                tooltip.classList.remove('hidden');
+                tooltip.style.left = Math.max(8, pointRect.left - rect.left + 10) + 'px';
+                tooltip.style.top = Math.max(8, pointRect.top - rect.top - 38) + 'px';
+            });
+            circle.addEventListener('blur', function () {
+                if (tooltip) tooltip.classList.add('hidden');
+            });
+        });
     }
 
     function clearMetricsChart() {
