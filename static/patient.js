@@ -1483,6 +1483,7 @@
         } catch (error) {
             if (error instanceof AuthError) return;
             showToast(error.message, 'error');
+        } finally {
             if (button) button.disabled = false;
         }
     }
