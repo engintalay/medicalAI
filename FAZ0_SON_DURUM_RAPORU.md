@@ -407,7 +407,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 99 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 100 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -434,7 +434,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/llm` | LLM ayarları: Temel + **Advanced** (token, timeout, RAG ve dosya sınırları) |
 | `/admin/users` | Kullanıcı listesi + **yeni kullanıcı oluşturma** (admin/hasta) + aktif/pasif |
 | `/admin/storage` | Disk kullanımı |
-| `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) + **metrik tanımı kataloğu yönetimi** |
+| `/admin/health` | Kullanıcı metriklerini görüntüleme/**düzenleme**/ekleme/silme + **metrik tanımı kataloğu yönetimi** |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
 | `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
 | `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **içerik görüntüleme/düzenleme/yeniden indexleme**, ilaç arama/seçim, listeleme, silme |

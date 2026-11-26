@@ -104,6 +104,28 @@ def test_patient_metric_uses_definition_unit_and_range(client, patient_headers):
     client.delete(f"/api/user/metrics/{metric_id}", headers=patient_headers)
 
 
+def test_admin_can_edit_user_metric(client, admin_headers, patient):
+    user_id = patient["user_id"]
+    created = client.post("/admin/api/health/metrics", headers=admin_headers,
+                          params={"user_id": user_id}, json={
+                              "metric_name": "weight", "value": 70, "unit": "kg",
+                              "recorded_at": "2026-01-01T00:00:00Z",
+                          })
+    assert created.status_code == 201, created.text
+    metric_id = created.json()["data"]["metric_id"]
+    try:
+        updated = client.put(f"/admin/api/health/metrics/{metric_id}", headers=admin_headers,
+                             params={"user_id": user_id}, json={
+                                 "metric_name": "weight", "value": 69.5, "unit": "kg",
+                                 "recorded_at": "2026-01-02T00:00:00Z",
+                             })
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["data"]["value"] == 69.5
+    finally:
+        client.delete(f"/admin/api/health/metrics/{metric_id}", headers=admin_headers,
+                      params={"user_id": user_id})
+
+
 def test_metric_definitions_require_admin(client):
     assert client.get("/admin/api/health/metric-definitions").status_code == 401
     assert client.get("/api/user/metric-definitions").status_code == 401

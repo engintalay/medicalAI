@@ -26,6 +26,8 @@
         healthUserId: null,
         healthUsers: [],
         healthDefinitions: [],
+        healthMetrics: [],
+        healthEditingId: null,
         toastTimer: null
     };
 
@@ -282,6 +284,17 @@
             const cancelConfigBtn = event.target.closest('[data-config-cancel]');
             if (cancelConfigBtn) {
                 navigate('/admin/config', { push: false });
+                return;
+            }
+
+            const healthEditBtn = event.target.closest('[data-health-edit]');
+            if (healthEditBtn) {
+                editHealthMetric(Number(healthEditBtn.getAttribute('data-health-edit')));
+                return;
+            }
+
+            if (event.target.closest('#healthCancelEditBtn')) {
+                resetHealthMetricForm();
                 return;
             }
 
@@ -1116,7 +1129,8 @@
             '<div class="field"><label class="label" for="metricRecordedAt">Ölçüm tarihi</label>' +
             '<input class="input" id="metricRecordedAt" type="datetime-local" value="' +
             localDateTimeInputValue() + '"></div>' +
-            '<div class="field field-action"><button type="submit" class="btn btn-primary" id="healthSubmitBtn">Ekle</button></div>' +
+            '<div class="field field-action"><button type="submit" class="btn btn-primary" id="healthSubmitBtn">Ekle</button>' +
+            '<button type="button" class="btn btn-secondary hidden" id="healthCancelEditBtn">Vazgeç</button></div>' +
             '</form>' +
             '</div>' +
             '<div class="card">' +
@@ -1223,6 +1237,7 @@
     function renderHealthTable(metrics) {
         const container = document.getElementById('healthTable');
         if (!container) return;
+        state.healthMetrics = metrics || [];
 
         const rows = metrics.map(function (metric) {
             return '<tr>' +
@@ -1231,7 +1246,9 @@
                 '<td><span class="badge badge-info">' + esc(metric.metric_name) + '</span></td>' +
                 '<td class="mono">' + formatNumber(metric.value) + '</td>' +
                 '<td>' + esc(metric.unit || '—') + '</td>' +
-                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                '<td class="actions-cell"><button type="button" class="btn btn-secondary btn-sm" ' +
+                'data-health-edit="' + esc(metric.metric_id) + '">Düzenle</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" ' +
                 'data-health-delete="' + esc(metric.metric_id) + '">Sil</button></td>' +
                 '</tr>';
         }).join('');
@@ -1241,6 +1258,41 @@
             '<thead><tr><th>Ölçüm Zamanı</th><th>Giriş Zamanı</th><th>Metrik</th><th>Değer</th><th>Birim</th><th></th></tr></thead>' +
             '<tbody>' + (rows || '<tr><td colspan="6" class="empty">Bu kullanıcı için ölçüm bulunamadı.</td></tr>') +
             '</tbody></table></div>';
+    }
+
+    function editHealthMetric(metricId) {
+        const metric = (state.healthMetrics || []).find(function (item) {
+            return Number(item.metric_id) === Number(metricId);
+        });
+        const form = document.getElementById('healthForm');
+        if (!metric || !form) return;
+        state.healthEditingId = metric.metric_id;
+        const nameInput = document.getElementById('metricName');
+        if (nameInput && !Array.from(nameInput.options).some(function (option) {
+            return option.value === metric.metric_name;
+        })) {
+            const option = document.createElement('option');
+            option.value = metric.metric_name;
+            option.textContent = metric.metric_name + ' (eski kayıt)';
+            nameInput.appendChild(option);
+        }
+        nameInput.value = metric.metric_name;
+        document.getElementById('metricValue').value = metric.value;
+        document.getElementById('metricUnit').value = metric.unit || '';
+        document.getElementById('metricRecordedAt').value = localDateTimeInputValue(metric.recorded_at);
+        document.getElementById('healthSubmitBtn').textContent = 'Güncelle';
+        document.getElementById('healthCancelEditBtn').classList.remove('hidden');
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function resetHealthMetricForm() {
+        const form = document.getElementById('healthForm');
+        if (!form) return;
+        state.healthEditingId = null;
+        form.reset();
+        document.getElementById('metricName').innerHTML = adminMetricOptionsHTML();
+        document.getElementById('healthSubmitBtn').textContent = 'Ekle';
+        document.getElementById('healthCancelEditBtn').classList.add('hidden');
     }
 
     async function handleHealthSubmit(event) {
@@ -1267,9 +1319,13 @@
         }
 
         submit.disabled = true;
+        const editingId = state.healthEditingId;
+        const endpoint = editingId !== null
+            ? '/health/metrics/' + encodeURIComponent(editingId) + '?user_id=' + encodeURIComponent(state.healthUserId)
+            : '/health/metrics?user_id=' + encodeURIComponent(state.healthUserId);
         try {
-            await api('/health/metrics?user_id=' + encodeURIComponent(state.healthUserId), {
-                method: 'POST',
+            await api(endpoint, {
+                method: editingId !== null ? 'PUT' : 'POST',
                 body: {
                     metric_name: metricName,
                     value: value,
@@ -1278,8 +1334,9 @@
                         ? new Date(recordedAtInput.value).toISOString() : null
                 }
             });
-            showToast('Ölçüm eklendi.', 'success');
-            valueInput.value = '';
+            showToast(editingId !== null ? 'Ölçüm güncellendi.' : 'Ölçüm eklendi.', 'success');
+            if (editingId !== null) resetHealthMetricForm();
+            else valueInput.value = '';
             await loadHealth();
         } catch (error) {
             if (error instanceof AuthError) return;
