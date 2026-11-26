@@ -18,6 +18,15 @@ def _cleanup_source(cfg, source, user_id):
         conn.close()
 
 
+def test_drug_import_buttons_use_url_attribute():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent / "static"
+    for filename in ("admin.js", "patient.js"):
+        text = (root / filename).read_text(encoding="utf-8")
+        assert "data-drug-url=" in text
+        assert "data-drug-import=" not in text
+
+
 def test_ascii85_pdf_text_extracted_locally():
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer)

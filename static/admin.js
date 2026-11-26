@@ -432,7 +432,7 @@
                 return;
             }
 
-            const drugImportBtn = event.target.closest('[data-drug-import]');
+            const drugImportBtn = event.target.closest('[data-drug-url]');
             if (drugImportBtn) {
                 importDrugUrl(
                     drugImportBtn.getAttribute('data-drug-url'),
@@ -2595,7 +2595,7 @@
                 return '<div class="status-row" style="align-items:flex-start">' +
                     '<div><div class="status-label">' + esc(item.title) + '</div>' +
                     '<div class="status-hint">' + esc(item.url) + '</div></div>' +
-                    '<button type="button" class="btn btn-primary btn-sm" data-drug-import="' +
+                    '<button type="button" class="btn btn-primary btn-sm" data-drug-url="' +
                     esc(item.url) + '" data-drug-title="' + esc(item.title) + '">Ekle</button></div>';
             }).join('') : '<div class="empty" style="padding:16px">Sonuç bulunamadı.</div>';
         } catch (error) {
@@ -2605,7 +2605,11 @@
     }
 
     async function importDrugUrl(url, title) {
-        const slug = String(url || '').split('/').filter(Boolean).pop() || 'ilac';
+        if (!url) {
+            showToast('İlaç URL’si alınamadı.', 'error');
+            return;
+        }
+        const slug = String(url).split('/').filter(Boolean).pop() || 'ilac';
         const source = 'prospektus:' + slug;
         try {
             const response = await api('/rag/import-url', {
