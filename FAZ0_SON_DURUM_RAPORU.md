@@ -374,6 +374,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 - Prompt'ta yalnızca RAG kayıtları bağlam olarak kullanılır; eksik bilgi uydurulmaz.
 - LLM'e **tek system mesajı** gönderilir; geçmiş user/assistant sırası normalize edilir.
   medgemma gibi rol sırasını zorunlu kılan Jinja şablonlarıyla uyumluluk sağlanır.
+- `/admin/config` üzerinden `llm_max_tokens` (varsayılan 256) ve `llm_timeout`
+  (varsayılan 180 saniye) ayarlanabilir; yerel 27B modellerin cevap süresi buna göre belirlenir.
 - Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
   özel RAG parçaları) daima JWT'deki `user_id` ile filtrelenir.
 - Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
@@ -381,9 +383,10 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 63 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 64 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
-  admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu).
+  admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
+  LLM token/timeout ayarları).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -443,5 +446,6 @@ GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200
 POST /admin/api/users 201 → yeni hasta girişi 200
 PATCH /admin/api/users/{id} 200 → pasif giriş 401, tekrar aktif 200
 GET /admin/users 200
+POST /api/chat 200 (medgemma, tek system mesajı, 56.9 sn)
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

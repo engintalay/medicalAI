@@ -2,6 +2,7 @@
 
 import uuid
 
+from routes.chat import _llm_settings
 from services import rag
 
 
@@ -62,6 +63,30 @@ def test_chat_messages_alternate_for_strict_templates(client, patient_headers, f
     assert conversation_roles[-1] == "user"
     for index, role in enumerate(conversation_roles):
         assert role == ("user" if index % 2 == 0 else "assistant")
+
+
+def test_chat_token_and_timeout_config(client, patient_headers, fake_llm, cfg):
+    old_tokens = cfg.get("llm_max_tokens")
+    old_timeout = cfg.get("llm_timeout")
+    cfg.set("llm_max_tokens", "64")
+    cfg.set("llm_timeout", "120")
+    try:
+        response = client.post("/api/chat", headers=patient_headers, json={
+            "message": "Kısa bir yanıt verir misin?"
+        })
+        assert response.status_code == 200, response.text
+        settings = _llm_settings()
+        assert settings["max_tokens"] == 64
+        assert settings["timeout"] == 120
+    finally:
+        if old_tokens is not None:
+            cfg.set("llm_max_tokens", old_tokens)
+        else:
+            cfg.set("llm_max_tokens", "256")
+        if old_timeout is not None:
+            cfg.set("llm_timeout", old_timeout)
+        else:
+            cfg.set("llm_timeout", "180")
 
 
 def test_empty_and_unconfigured(client, patient_headers, cfg):

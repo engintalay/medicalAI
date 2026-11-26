@@ -223,6 +223,8 @@ def main() -> int:
         ("llm_model", os.getenv("LLM_MODEL", "gpt-4o-mini"), "Ana LLM model adı (sağlık)"),
         ("llm_provider", os.getenv("LLM_PROVIDER", "openai"), "Ana LLM sağlayıcısı"),
         ("llm_base_url", os.getenv("LLM_BASE_URL", ""), "Ana LLM API adresi (opsiyonel)"),
+        ("llm_max_tokens", os.getenv("LLM_MAX_TOKENS", "256"), "Ana LLM maksimum cevap token sayısı"),
+        ("llm_timeout", os.getenv("LLM_TIMEOUT", "180"), "Ana LLM istek zaman aşımı (saniye)"),
         ("llm_vision_supported", os.getenv("LLM_VISION_SUPPORTED", "false"), "Ana LLM görsel (vision) destekliyor mu?"),
         ("vision_llm_enabled", os.getenv("VISION_LLM_ENABLED", "false"), "İkinci vision LLM kullanılsın mı?"),
         ("vision_llm_provider", os.getenv("VISION_LLM_PROVIDER", "openai"), "Vision LLM sağlayıcısı"),

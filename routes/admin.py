@@ -250,6 +250,7 @@ async def update_config(request: Request, key: str, value: str = None):
         'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
         'redis_host', 'redis_port', 'redis_password', 'redis_username',
         'llm_api_key', 'llm_model', 'llm_provider', 'llm_base_url',
+        'llm_max_tokens', 'llm_timeout',
         'llm_vision_supported', 'vision_llm_enabled',
         'vision_llm_provider', 'vision_llm_model', 'vision_llm_api_key', 'vision_llm_base_url',
         'embedding_model', 'rag_top_k', 'rag_chunk_size', 'rag_overlap',
@@ -498,9 +499,8 @@ def _chat_completion_probe(
     body = {
         'model': model,
         'temperature': 0,
-        # Reasoning modelleri (örn. Ornith) ilk token'ları düşünceye harcar;
-        # 32 yetersiz kalıp boş içerik döner. 256 güvenli üst sınır.
-        'max_tokens': 256,
+        # Yerel 27B modellerde 256 token dakikalar sürebilir; ping için 64 yeterli.
+        'max_tokens': 64,
         'messages': [{'role': 'user', 'content': user_content}],
     }
     headers = dict(LLM_HTTP_HEADERS)
@@ -516,7 +516,11 @@ def _chat_completion_probe(
     )
     started = time.perf_counter()
     try:
-        with urlopen(request, timeout=20) as response:
+        timeout = float(_config.get('llm_timeout', '180') or 180)
+    except (TypeError, ValueError):
+        timeout = 180
+    try:
+        with urlopen(request, timeout=max(30, min(timeout, 600))) as response:
             raw = response.read(256 * 1024)
     except HTTPError as exc:
         detail = ''

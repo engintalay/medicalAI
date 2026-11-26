@@ -73,9 +73,19 @@ def _llm_settings() -> dict:
         raise ValueError("LLM yapılandırılmadı.")
     if parsed.username or parsed.password:
         raise ValueError("LLM yapılandırılmadı.")
+    try:
+        max_tokens = int(_config.get("llm_max_tokens", "256") or 256)
+    except (TypeError, ValueError):
+        max_tokens = 256
+    try:
+        timeout = float(_config.get("llm_timeout", "180") or 180)
+    except (TypeError, ValueError):
+        timeout = 180
     return {
         "provider": provider, "model": model, "api_key": api_key,
         "base_url": base_url + "/chat/completions",
+        "max_tokens": max(16, min(max_tokens, 4096)),
+        "timeout": max(15, min(timeout, 600)),
     }
 
 
@@ -88,12 +98,12 @@ def _call_llm(messages: list, settings: dict) -> str:
     body = json.dumps({
         "model": settings["model"],
         "temperature": 0.2,
-        "max_tokens": 512,
+        "max_tokens": settings["max_tokens"],
         "messages": messages,
     }).encode("utf-8")
     request = Request(settings["base_url"], data=body, headers=headers, method="POST")
     try:
-        with urlopen(request, timeout=45) as response:
+        with urlopen(request, timeout=settings["timeout"]) as response:
             raw = response.read(512 * 1024)
     except HTTPError as exc:
         detail = ""
