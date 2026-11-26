@@ -133,7 +133,7 @@ INSERT INTO system_config (key, value, description) VALUES
 ('vision_thinking', 'false', 'Vision LLM thinking/reasoning açık mı?'),
 ('embedding_model', 'all-MiniLM-L6-v2', 'Embedding model adı (CPU uyumlu varsayılan)'),
 ('rag_top_k', '5', 'RAG sonuc sayısı'),
-('upload_dir', '/uploads', 'Dosya yükleme dizini'),
+('upload_dir', 'uploads', 'Dosya yükleme dizini'),
 ('admin_default_password', 'changeme123', 'Varsayılan admin şifresi');
 
 -- Not: Basamak 3'te Loader bu verileri okuyacak, ancak bu yapı hem config hem de veri tutar.
