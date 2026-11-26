@@ -112,8 +112,20 @@ def main() -> int:
             original_name VARCHAR(255) NOT NULL,
             mime_type VARCHAR(100),
             size_bytes BIGINT,
-            upload_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            upload_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            extracted_text TEXT,
+            extracted_at TIMESTAMP WITH TIME ZONE,
+            extraction_source VARCHAR(50)
         );
+    """)
+    cur.execute("""
+        ALTER TABLE user_uploads ADD COLUMN IF NOT EXISTS extracted_text TEXT
+    """)
+    cur.execute("""
+        ALTER TABLE user_uploads ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMP WITH TIME ZONE
+    """)
+    cur.execute("""
+        ALTER TABLE user_uploads ADD COLUMN IF NOT EXISTS extraction_source VARCHAR(50)
     """)
 
     cur.execute(f"""

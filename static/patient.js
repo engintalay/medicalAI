@@ -24,6 +24,7 @@
         authMode: 'login',
         chat: { conversations: [], activeId: null, messages: [], upload: null },
         metrics: { items: [], query: '', category: '', selected: new Set() },
+        uploads: { items: [], selected: new Set(), previews: {} },
         toastTimer: null
     };
 
@@ -442,6 +443,42 @@
 
             if (event.target.closest('#deleteSelectedMetricsBtn')) {
                 deleteSelectedMetrics();
+                return;
+            }
+
+            const uploadPreview = event.target.closest('[data-upload-preview]');
+            if (uploadPreview) {
+                previewUpload(Number(uploadPreview.getAttribute('data-upload-preview')));
+                return;
+            }
+
+            const uploadText = event.target.closest('[data-upload-text]');
+            if (uploadText) {
+                showUploadText(Number(uploadText.getAttribute('data-upload-text')));
+                return;
+            }
+
+            const uploadCheck = event.target.closest('[data-upload-select]');
+            if (uploadCheck) {
+                const id = Number(uploadCheck.getAttribute('data-upload-select'));
+                if (uploadCheck.checked) state.uploads.selected.add(id);
+                else state.uploads.selected.delete(id);
+                renderUploadsTable();
+                return;
+            }
+
+            if (event.target.closest('#uploadsSelectAll')) {
+                const checked = document.getElementById('uploadsSelectAll').checked;
+                state.uploads.items.forEach(function (item) {
+                    if (checked) state.uploads.selected.add(item.id);
+                    else state.uploads.selected.delete(item.id);
+                });
+                renderUploadsTable();
+                return;
+            }
+
+            if (event.target.closest('#deleteSelectedUploadsBtn')) {
+                deleteSelectedUploads();
                 return;
             }
 
@@ -1182,23 +1219,57 @@
     /* Dosyalar                                                           */
     /* ------------------------------------------------------------------ */
 
+    function revokeUploadPreviews() {
+        Object.keys(state.uploads.previews).forEach(function (key) {
+            URL.revokeObjectURL(state.uploads.previews[key]);
+            delete state.uploads.previews[key];
+        });
+    }
+
+    async function fetchUploadBlob(id) {
+        const response = await fetch('/api/uploads/' + encodeURIComponent(id) + '/file', {
+            headers: { Authorization: 'Bearer ' + state.token }
+        });
+        if (response.status === 401) {
+            clearAuth();
+            renderAuth();
+            throw new AuthError('Oturum süresi doldu');
+        }
+        if (!response.ok) throw new Error('Dosya açılamadı (HTTP ' + response.status + ')');
+        return response.blob();
+    }
+
+    async function loadUploadThumbnails() {
+        const images = state.uploads.items.filter(function (item) {
+            return String(item.mime_type || '').startsWith('image/');
+        }).slice(0, 30);
+        for (const item of images) {
+            if (state.uploads.previews[item.id]) {
+                const img = document.querySelector('[data-upload-thumb="' + item.id + '"]');
+                if (img) img.src = state.uploads.previews[item.id];
+                continue;
+            }
+            try {
+                const blob = await fetchUploadBlob(item.id);
+                const url = URL.createObjectURL(blob);
+                state.uploads.previews[item.id] = url;
+                const img = document.querySelector('[data-upload-thumb="' + item.id + '"]');
+                if (img) img.src = url;
+            } catch (error) {
+                if (error instanceof AuthError) return;
+            }
+        }
+    }
+
     async function renderUploads() {
+        revokeUploadPreviews();
         const response = await api('/api/uploads');
-        const items = response.data || [];
-        const rows = items.length ? items.map(function (item) {
-            return '<tr><td>' + esc(item.filename) + '</td>' +
-                '<td>' + esc(item.mime_type || '—') + '</td>' +
-                '<td>' + formatBytes(item.size) + '</td>' +
-                '<td>' + formatDateTime(item.created_at) + '</td>' +
-                '<td class="actions-cell">' +
-                '<button type="button" class="btn btn-secondary btn-sm" data-upload-extract="' + item.id + '">Metin çıkar</button>' +
-                '<button type="button" class="btn btn-danger btn-sm" data-upload-delete="' + item.id + '">Sil</button>' +
-                '</td></tr>';
-        }).join('') : '<tr><td colspan="5" class="empty">Henüz dosya yüklemediniz.</td></tr>';
+        state.uploads.items = response.data || [];
+        state.uploads.selected = new Set();
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Dosyalarım</h2>' +
-            '<p class="page-sub">PDF, görsel ve metin dosyalarınızı yükleyin; içeriklerinden metin çıkarabilirsiniz.</p></div>' +
+            '<p class="page-sub">Görsel/PDF önizleyin, metin çıkarın ve birden fazla dosyayı birlikte silin.</p></div>' +
             '<form class="card" data-form="upload" id="uploadForm">' +
             '<label class="dropzone" for="uploadFile">' +
             '<span class="emoji">📎</span><strong>Dosya seç veya sürükle-bırak</strong>' +
@@ -1207,11 +1278,13 @@
             '<div class="form-actions"><button type="submit" class="btn btn-primary">Yükle</button></div>' +
             '</form><div id="extractResult"></div>' +
             '<div class="section-head"><div class="section-title">Yüklenen dosyalar</div>' +
-            '<span class="hint">' + formatNumber(items.length) + ' dosya</span></div>' +
-            '<div class="table-wrap"><table class="table"><thead><tr>' +
-            '<th>Dosya</th><th>Tip</th><th>Boyut</th><th>Tarih</th><th></th>' +
-            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+            '<span class="hint" id="uploadsCount"></span></div>' +
+            '<div class="toolbar"><div class="toolbar-group">' +
+            '<label class="inline-check"><input type="checkbox" id="uploadsSelectAll"> Tümünü seç</label>' +
+            '<button type="button" class="btn btn-danger btn-sm" id="deleteSelectedUploadsBtn" disabled>Seçilenleri sil (0)</button>' +
+            '</div></div><div id="uploadsTable"></div>';
 
+        renderUploadsTable();
         const zone = document.querySelector('.dropzone');
         const input = document.getElementById('uploadFile');
         if (zone && input) {
@@ -1233,6 +1306,129 @@
                 }
             });
         }
+    }
+
+    function renderUploadsTable() {
+        const container = document.getElementById('uploadsTable');
+        if (!container) return;
+        const items = state.uploads.items;
+        const rows = items.length ? items.map(function (item) {
+            const image = String(item.mime_type || '').startsWith('image/');
+            const icon = image
+                ? '<img class="upload-thumb" data-upload-thumb="' + item.id + '" alt="Önizleme">'
+                : '<span class="upload-file-icon">' + (item.mime_type === 'application/pdf' ? '📄' : '📝') + '</span>';
+            const textReady = !!(item.extracted_text || '').trim();
+            return '<tr>' +
+                '<td><input type="checkbox" data-upload-select="' + item.id + '"' +
+                (state.uploads.selected.has(item.id) ? ' checked' : '') + ' aria-label="Dosyayı seç"></td>' +
+                '<td><div class="upload-name">' + icon + '<div><strong>' + esc(item.filename) + '</strong>' +
+                '<div class="hint">' + esc(item.mime_type || '—') + '</div></div></div></td>' +
+                '<td>' + formatBytes(item.size) + '</td>' +
+                '<td>' + formatDateTime(item.created_at) + '</td>' +
+                '<td>' + (textReady
+                    ? '<span class="badge badge-success">Metin hazır</span><div class="hint">' +
+                      formatDateTime(item.extracted_at) + '</div>'
+                    : '<span class="badge badge-warning">Çıkarılmadı</span>') + '</td>' +
+                '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-upload-preview="' + item.id + '">Önizle</button>' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-upload-' +
+                (textReady ? 'text' : 'extract') + '="' + item.id + '">' +
+                (textReady ? 'Metni gör' : 'Metin çıkar') + '</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" data-upload-delete="' + item.id + '">Sil</button>' +
+                '</td></tr>';
+        }).join('') : '<tr><td colspan="6" class="empty">Henüz dosya yüklemediniz.</td></tr>';
+
+        container.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th></th><th>Dosya</th><th>Boyut</th><th>Yüklenme</th><th>Metin</th><th></th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+        const count = document.getElementById('uploadsCount');
+        if (count) count.textContent = formatNumber(items.length) + ' dosya';
+        const selectAll = document.getElementById('uploadsSelectAll');
+        if (selectAll) {
+            selectAll.checked = items.length > 0 && state.uploads.selected.size === items.length;
+            selectAll.indeterminate = state.uploads.selected.size > 0 && state.uploads.selected.size < items.length;
+        }
+        const button = document.getElementById('deleteSelectedUploadsBtn');
+        if (button) {
+            button.disabled = state.uploads.selected.size === 0;
+            button.textContent = 'Seçilenleri sil (' + state.uploads.selected.size + ')';
+        }
+        loadUploadThumbnails();
+    }
+
+    function closePreview(overlay, objectUrl) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        document.removeEventListener('keydown', onPreviewKeydown, true);
+        overlay.remove();
+    }
+
+    function onPreviewKeydown(event) {
+        if (event.key === 'Escape') {
+            const overlay = document.querySelector('.preview-overlay');
+            if (overlay) closePreview(overlay, overlay.getAttribute('data-object-url'));
+        }
+    }
+
+    async function previewUpload(id) {
+        const item = state.uploads.items.find(function (row) { return row.id === id; });
+        if (!item) return;
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay preview-overlay';
+        overlay.innerHTML = '<div class="preview-card"><div class="preview-head">' +
+            '<strong></strong><button type="button" class="btn btn-secondary btn-sm" data-preview-close>Kapat</button></div>' +
+            '<div class="preview-body">' + loadingHTML('Dosya açılıyor...') + '</div></div>';
+        overlay.querySelector('.preview-head strong').textContent = item.filename;
+        overlay.querySelector('[data-preview-close]').addEventListener('click', function () {
+            closePreview(overlay, overlay.getAttribute('data-object-url'));
+        });
+        overlay.addEventListener('click', function (event) {
+            if (event.target === overlay) closePreview(overlay, overlay.getAttribute('data-object-url'));
+        });
+        document.addEventListener('keydown', onPreviewKeydown, true);
+        document.body.appendChild(overlay);
+        try {
+            const blob = await fetchUploadBlob(id);
+            const url = URL.createObjectURL(blob);
+            overlay.setAttribute('data-object-url', url);
+            const body = overlay.querySelector('.preview-body');
+            if (String(item.mime_type || '').startsWith('image/')) {
+                body.innerHTML = '<img class="preview-image" alt="Dosya önizleme">';
+                body.querySelector('img').src = url;
+            } else if (item.mime_type === 'application/pdf') {
+                body.innerHTML = '<iframe class="preview-pdf" title="PDF önizleme"></iframe>';
+                body.querySelector('iframe').src = url;
+            } else {
+                const text = await blob.text();
+                body.innerHTML = '<pre class="preview-text"></pre>';
+                body.querySelector('pre').textContent = text;
+            }
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            const body = overlay.querySelector('.preview-body');
+            if (body) body.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
+        }
+    }
+
+    function showUploadText(id) {
+        const item = state.uploads.items.find(function (row) { return row.id === id; });
+        if (!item) return;
+        if (!(item.extracted_text || '').trim()) {
+            extractUpload(id, true);
+            return;
+        }
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay preview-overlay';
+        overlay.innerHTML = '<div class="preview-card"><div class="preview-head">' +
+            '<strong>Çıkarılan metin · ' + esc(item.filename) + '</strong>' +
+            '<button type="button" class="btn btn-secondary btn-sm" data-preview-close>Kapat</button></div>' +
+            '<div class="preview-body"><pre class="preview-text"></pre></div></div>';
+        overlay.querySelector('pre').textContent = item.extracted_text;
+        overlay.querySelector('[data-preview-close]').addEventListener('click', function () { closePreview(overlay); });
+        overlay.addEventListener('click', function (event) {
+            if (event.target === overlay) closePreview(overlay);
+        });
+        document.addEventListener('keydown', onPreviewKeydown, true);
+        document.body.appendChild(overlay);
     }
 
     async function uploadFile(form) {
@@ -1263,25 +1459,51 @@
         }
     }
 
-    async function extractUpload(id) {
-        const box = document.getElementById('extractResult');
-        if (box) {
-            box.innerHTML = '<div class="alert alert-info show">Metin çıkarılıyor...</div>';
+    async function deleteSelectedUploads() {
+        const ids = Array.from(state.uploads.selected);
+        if (!ids.length) return;
+        if (!await MedicalDialog.confirm(ids.length + ' dosya kalıcı olarak silinsin mi?', {
+            title: 'Seçilen dosyaları sil', confirmText: 'Tümünü sil', cancelText: 'Vazgeç'
+        })) return;
+        const button = document.getElementById('deleteSelectedUploadsBtn');
+        if (button) button.disabled = true;
+        let deleted = 0;
+        for (const id of ids) {
+            try {
+                await api('/api/uploads/' + encodeURIComponent(id), { method: 'DELETE' });
+                deleted += 1;
+            } catch (error) {
+                if (error instanceof AuthError) return;
+                showToast(error.message, 'error');
+            }
         }
+        showToast(deleted + ' dosya silindi.', deleted === ids.length ? 'success' : 'error');
+        await navigate('/patient/uploads', { push: false });
+    }
+
+    async function extractUpload(id, openResult) {
+        const box = document.getElementById('extractResult');
+        if (box) box.innerHTML = '<div class="alert alert-info show">Metin çıkarılıyor...</div>';
         try {
             const response = await api('/api/uploads/' + encodeURIComponent(id) + '/extract', {
                 method: 'POST', body: {}
             });
             const data = response.data || {};
             const text = data.text || data.extracted_text || JSON.stringify(data);
-            if (box) {
-                box.innerHTML = '<div class="extract-box">' + esc(text) + '</div>';
+            const item = state.uploads.items.find(function (row) { return row.id === id; });
+            if (item) {
+                item.extracted_text = text;
+                item.extracted_at = new Date().toISOString();
+                item.extraction_source = data.source || '';
             }
+            renderUploadsTable();
+            if (box) box.innerHTML = '<div class="extract-box">' + esc(text) + '</div>';
+            showToast('Metin çıkarıldı ve kaydedildi.', 'success');
+            if (openResult) showUploadText(id);
         } catch (error) {
             if (error instanceof AuthError) return;
-            if (box) {
-                box.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
-            }
+            if (box) box.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
+            showToast(error.message, 'error');
         }
     }
 

@@ -2093,6 +2093,32 @@
         "description": "Hasta: sohbeti ve mesajlarını sil"
       },
       "response": []
+    },
+    {
+      "name": "GET /api/uploads/:upload_id/file",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/uploads/:upload_id/file",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "uploads",
+            ":upload_id",
+            "file"
+          ]
+        },
+        "description": "Hasta: kendi dosyasını güvenli inline önizle"
+      },
+      "response": []
     }
   ]
 }

@@ -10,7 +10,7 @@ from pathlib import Path
 import psycopg2
 from fastapi import APIRouter, Body, Depends, File, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse as _FastJSONResponse
+from fastapi.responses import FileResponse, JSONResponse as _FastJSONResponse
 
 from config.loader import get_config_loader
 from routes.auth import require_patient
@@ -89,6 +89,9 @@ def _row_to_dict(row) -> dict:
         "mime_type": row[4],
         "size": row[5],
         "created_at": row[6],
+        "extracted_text": row[7] if len(row) > 7 else None,
+        "extracted_at": row[8] if len(row) > 8 else None,
+        "extraction_source": row[9] if len(row) > 9 else None,
     }
 
 
@@ -138,7 +141,8 @@ async def upload_file(
             INSERT INTO user_uploads
                 (user_id, file_path, original_name, stored_name, mime_type, size_bytes)
             VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING upload_id, user_id, original_name, stored_name, mime_type, size_bytes, upload_date
+            RETURNING upload_id, user_id, original_name, stored_name, mime_type, size_bytes,
+                      upload_date, extracted_text, extracted_at, extraction_source
             """,
             (user_id, str(path), original, stored_name, mime, len(data)),
         )
@@ -159,6 +163,25 @@ async def upload_file(
             conn.close()
 
     return JSONResponse(status_code=200, content={"success": True, "data": _row_to_dict(row)})
+
+
+def _save_extraction(upload_id: int, user_id: int, result: dict):
+    conn = None
+    cur = None
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE user_uploads SET extracted_text = %s, extracted_at = NOW(), "
+            "extraction_source = %s WHERE upload_id = %s AND user_id = %s",
+            (str(result.get("text") or ""), str(result.get("source") or ""), upload_id, user_id),
+        )
+        conn.commit()
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @router.post("/api/uploads/{upload_id}/extract", summary="Dosyadan Metin Çıkar")
@@ -192,7 +215,39 @@ async def extract_upload_text(
             status_code=exc.status_code,
             content={"success": False, "error": str(exc)},
         )
+    _save_extraction(upload_id, int(user["user_id"]), result)
     return JSONResponse(status_code=200, content={"success": True, "data": result})
+
+
+@router.get("/api/uploads/{upload_id}/file", summary="Dosya Önizleme (güvenli)")
+async def get_upload_file(upload_id: int, user: dict = Depends(require_patient)):
+    conn = None
+    cur = None
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT file_path, original_name, mime_type FROM user_uploads "
+            "WHERE upload_id = %s AND user_id = %s",
+            (upload_id, int(user["user_id"])),
+        )
+        row = cur.fetchone()
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
+    if not row:
+        return JSONResponse(status_code=404, content={"success": False, "error": "Dosya bulunamadı."})
+    path = Path(row[0])
+    if not path.is_file():
+        return JSONResponse(status_code=404, content={"success": False, "error": "Dosya bulunamadı."})
+    return FileResponse(
+        path,
+        media_type=row[2] or "application/octet-stream",
+        filename=row[1] or "dosya",
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/api/uploads", summary="Dosyaları Listele")
@@ -205,7 +260,8 @@ async def list_uploads(user: dict = Depends(require_patient)):
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT upload_id, user_id, original_name, stored_name, mime_type, size_bytes, upload_date
+            SELECT upload_id, user_id, original_name, stored_name, mime_type, size_bytes,
+                   upload_date, extracted_text, extracted_at, extraction_source
             FROM user_uploads
             WHERE user_id = %s
             ORDER BY upload_date DESC

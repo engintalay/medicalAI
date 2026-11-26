@@ -299,6 +299,12 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
                 )
             extracted_text = str(result.get("text") or "").strip()
             filename = _upload_filename(conn, upload_id, user_id)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE user_uploads SET extracted_text = %s, extracted_at = NOW(), "
+                    "extraction_source = %s WHERE upload_id = %s AND user_id = %s",
+                    (extracted_text, str(result.get("source") or ""), upload_id, user_id),
+                )
             attachment = {
                 "upload_id": upload_id,
                 "filename": filename,
