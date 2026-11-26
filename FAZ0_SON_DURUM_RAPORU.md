@@ -407,7 +407,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 103 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 105 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -458,6 +458,9 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
   pasife alınamaz. Pasif kullanıcının girişi 401 döner.
 
 Hasta paneli ayrı JWT (`patient_token`) kullanır; admin token'ı hasta ekranlarında geçmez.
+Kök adres `/patient` normal kullanıcı girişine yönlenir; `/admin/login` ayrı admin girişidir.
+Normal giriş admin hesabını da kabul eder; admin kullanıcıda hasta menüsü gizlenir ve
+yalnızca **Admin Paneli** bağlantısı gösterilir.
 Tüm silme/arşiv onayları ortak `MedicalDialog` bileşeniyle modal dialog olarak gösterilir
 (Esc: vazgeç, Enter: onayla; odak yönetimi ve mobil uyum).
 Sohbet ekranında dosya seçildiğinde veya sohbet alanına sürüklendiğinde yükleme tamamlanır

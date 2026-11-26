@@ -867,7 +867,7 @@
             "login"
           ]
         },
-        "description": "Hasta Girişi",
+        "description": "Normal kullanıcı girişi (hasta veya admin rolü)",
         "body": {
           "mode": "raw",
           "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"Patient123!\"\n}",

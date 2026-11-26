@@ -150,8 +150,8 @@ def _admin_page() -> HTMLResponse:
 
 @app.get("/", include_in_schema=False)
 async def root():
-    """Kök adres -> admin panele yönlendir."""
-    return RedirectResponse(url="/admin", status_code=307)
+    """Kök adres -> normal kullanıcı giriş paneli."""
+    return RedirectResponse(url="/patient", status_code=307)
 
 
 @app.get("/admin", include_in_schema=False)

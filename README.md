@@ -23,6 +23,8 @@ python database/init_db.py
 ./run.sh
 ```
 
+- Normal kullanıcı girişi: <http://localhost:8000/patient>
+- Admin girişi: <http://localhost:8000/admin/login>
 - Admin: <http://localhost:8000/admin>
 - Hasta: <http://localhost:8000/patient>
 - API dokümantasyonu: <http://localhost:8000/docs>

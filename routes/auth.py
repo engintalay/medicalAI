@@ -125,10 +125,11 @@ async def patient_register(payload: PatientRegisterRequest):
     return _auth_result(result, success_code=201)
 
 
-@router.post("/api/auth/login", summary="Hasta Girişi")
+@router.post("/api/auth/login", summary="Kullanıcı Girişi (hasta/admin)")
 async def patient_login(payload: PatientLoginRequest):
     try:
-        result = auth_service.login(payload.email, payload.password, role="patient")
+        # Normal giriş her rolü kabul eder; admin hesabı hasta API'lerinde kullanılamaz.
+        result = auth_service.login(payload.email, payload.password, role=None)
     except Exception as exc:
         return JSONResponse(
             status_code=503,

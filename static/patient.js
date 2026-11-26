@@ -38,7 +38,7 @@
 
     function readUser() {
         try {
-            return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+            return JSON.parse(localStorage.getItem(USER_KEY) || localStorage.getItem('admin_user') || 'null');
         } catch (error) {
             return null;
         }
@@ -174,6 +174,8 @@
         state.user = null;
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('admin_user');
     }
 
     function updateUserChip() {
@@ -204,6 +206,7 @@
     /* ------------------------------------------------------------------ */
 
     function renderAuth(notice) {
+        setPatientMode();
         state.page = 'auth';
         if (pageTitle) pageTitle.textContent = 'Giriş';
         document.title = 'Medical AI · Hasta Girişi';
@@ -251,6 +254,33 @@
             '</div></div>';
     }
 
+    function setPatientMode() {
+        document.body.classList.remove('admin-mode');
+        document.querySelectorAll('.nav-item[data-path]').forEach(function (item) {
+            item.classList.remove('hidden');
+        });
+        const adminLink = document.getElementById('patientAdminLink');
+        if (adminLink) adminLink.classList.add('hidden');
+    }
+
+    function renderAdminLanding() {
+        state.page = 'admin-landing';
+        if (pageTitle) pageTitle.textContent = 'Admin Hesabı';
+        document.title = 'Medical AI · Admin Hesabı';
+        document.body.classList.add('admin-mode');
+        document.querySelectorAll('.nav-item[data-path]').forEach(function (item) {
+            item.classList.add('hidden');
+        });
+        const adminLink = document.getElementById('patientAdminLink');
+        if (adminLink) adminLink.classList.remove('hidden');
+        contentArea.innerHTML =
+            '<div class="page-head"><h2 class="page-title">Admin hesabıyla giriş yaptın</h2>' +
+            '<p class="page-sub">Yönetim işlemleri için ayrı admin panelini kullanabilirsin.</p></div>' +
+            '<div class="card" style="max-width:620px"><div class="card-title">Admin Paneli</div>' +
+            '<p class="hint" style="margin:10px 0 16px">Kullanıcılar, sistem config, LLM, RAG ve sağlık metrikleri yönetimi.</p>' +
+            '<a class="btn btn-primary" href="/admin">Admin Paneline Git →</a></div>';
+    }
+
     function switchAuthMode(mode) {
         if (state.authMode === mode) return;
         state.authMode = mode;
@@ -285,8 +315,19 @@
             if (!response.ok || !data || !data.token) {
                 throw new Error(extractError(data, response.status));
             }
-            state.token = data.token;
             state.user = data.user || data.data || null;
+            if (state.user && state.user.role === 'admin') {
+                localStorage.setItem('admin_token', data.token);
+                localStorage.setItem('admin_user', JSON.stringify(state.user));
+                localStorage.removeItem(TOKEN_KEY);
+                localStorage.removeItem(USER_KEY);
+                state.token = '';
+                updateUserChip();
+                renderAdminLanding();
+                return;
+            }
+            state.token = data.token;
+            setPatientMode();
             localStorage.setItem(TOKEN_KEY, state.token);
             localStorage.setItem(USER_KEY, JSON.stringify(state.user || {}));
             updateUserChip();
@@ -600,11 +641,19 @@
             logoutBtn.addEventListener('click', async function () {
                 logoutBtn.disabled = true;
                 try {
-                    if (state.token) await api('/api/auth/logout', { method: 'POST' });
+                    if (state.token) {
+                        await api('/api/auth/logout', { method: 'POST' });
+                    } else if (state.user && state.user.role === 'admin' && localStorage.getItem('admin_token')) {
+                        await fetch('/admin/api/auth/logout', {
+                            method: 'POST',
+                            headers: { Authorization: 'Bearer ' + localStorage.getItem('admin_token') }
+                        });
+                    }
                 } catch (error) {
                     // Token zaten geçersiz olabilir; istemciyi yine temizle.
                 } finally {
                     clearAuth();
+                    setPatientMode();
                     renderAuth();
                     window.history.pushState({}, '', '/patient');
                 }
@@ -2183,9 +2232,16 @@
     function init() {
         setupShell();
         if (!state.token) {
+            const adminToken = localStorage.getItem('admin_token');
+            if (adminToken && state.user && state.user.role === 'admin') {
+                renderAdminLanding();
+                return;
+            }
+            setPatientMode();
             renderAuth();
             return;
         }
+        setPatientMode();
         navigate(window.location.pathname, { push: false });
     }
 

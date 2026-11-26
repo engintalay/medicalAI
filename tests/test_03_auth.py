@@ -3,6 +3,23 @@
 import uuid
 
 
+def test_root_redirects_to_patient_login(client):
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/patient"
+
+
+def test_normal_login_accepts_admin_but_patient_api_rejects(client, cfg):
+    response = client.post("/api/auth/login", json={
+        "email": "admin@medicalai.com",
+        "password": cfg.get("admin_default_password", "changeme123"),
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["role"] == "admin"
+    headers = {"Authorization": "Bearer " + response.json()["token"]}
+    assert client.get("/api/user/dashboard", headers=headers).status_code == 401
+
+
 def test_register_and_login(client):
     email = "qa_" + uuid.uuid4().hex[:10] + "@example.com"
     registered = client.post("/api/auth/register", json={
