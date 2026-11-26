@@ -1389,17 +1389,12 @@
             maxTime += 86400000;
         }
         const x = function (time) { return margin.left + ((time - minTime) / (maxTime - minTime)) * plotWidth; };
-        const showPercentAxis = series.some(function (item) { return item.points.length > 2; });
         let svg = '<svg class="metrics-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" ' +
             'role="img" aria-label="Seçili metriklerin ölçüm tarihine göre grafiği">';
         for (let index = 0; index <= 4; index += 1) {
             const y = margin.top + (plotHeight * index) / 4;
             svg += '<line x1="' + margin.left + '" y1="' + y + '" x2="' + (width - margin.right) +
                 '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"/>';
-            if (showPercentAxis) {
-                svg += '<text x="' + (margin.left - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
-                    'class="chart-axis-label">' + (100 - index * 25) + '%</text>';
-            }
         }
         for (let index = 0; index <= 4; index += 1) {
             const time = minTime + ((maxTime - minTime) * index) / 4;
@@ -1457,8 +1452,7 @@
             '<div class="chart-detail" id="metricsChartDetail">' + esc(defaultDetail) + '</div>' +
             '<div class="chart-legend">' + legend.join('') + '</div>' +
             '<div class="card-note">Tek/iki değerli serilerde gerçek değerler noktaların yanında gösterilir. ' +
-            'Farklı birimleri karşılaştırmak için her metrik kendi min–maks aralığına normalize edildi. ' +
-            'Noktaların üzerine gelerek tarih ve ölçüm değerini görebilirsin.</div>';
+            'Tüm gerçek değerler legend, nokta etiketleri ve detay panelinde bulunur; yüzde ekseni gösterilmez.</div>';
 
         const tooltip = document.getElementById('metricsChartTooltip');
         function showTooltip(event, circle) {
