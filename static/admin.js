@@ -25,6 +25,7 @@
         configMap: new Map(),
         healthUserId: null,
         healthUsers: [],
+        healthDefinitions: [],
         toastTimer: null
     };
 
@@ -328,6 +329,21 @@
                 return;
             }
 
+            const definitionToggle = event.target.closest('[data-definition-toggle]');
+            if (definitionToggle) {
+                toggleMetricDefinition(
+                    Number(definitionToggle.getAttribute('data-definition-toggle')),
+                    definitionToggle.getAttribute('data-active') === 'true'
+                );
+                return;
+            }
+
+            const definitionDelete = event.target.closest('[data-definition-delete]');
+            if (definitionDelete) {
+                deleteMetricDefinition(Number(definitionDelete.getAttribute('data-definition-delete')));
+                return;
+            }
+
             const drugImportBtn = event.target.closest('[data-drug-import]');
             if (drugImportBtn) {
                 importDrugUrl(
@@ -349,6 +365,9 @@
             } else if (form.getAttribute('data-form') === 'admin-user') {
                 event.preventDefault();
                 createAdminUser(form);
+            } else if (form.getAttribute('data-form') === 'metric-definition') {
+                event.preventDefault();
+                saveMetricDefinition(form);
             } else if (form.getAttribute('data-form') === 'rag-file') {
                 event.preventDefault();
                 saveRagFile(form);
@@ -924,9 +943,114 @@
     /* Sağlık Metrikleri                                                  */
     /* ------------------------------------------------------------------ */
 
+    function definitionCategoryLabel(key) {
+        const labels = {
+            blood_pressure: 'Tansiyon', pulse: 'Nabız', weight: 'Kilo',
+            glucose: 'Kan Şekeri', temperature: 'Sıcaklık', spo2: 'Oksijen', other: 'Diğer'
+        };
+        return labels[key] || key;
+    }
+
+    function adminMetricOptionsHTML() {
+        const active = (state.healthDefinitions || []).filter(function (item) { return item.is_active; });
+        if (!active.length) return '<option value="">Aktif metrik tanımı yok</option>';
+        return '<option value="">Metrik seçin</option>' + active.map(function (item) {
+            return '<option value="' + esc(item.metric_key) + '">' + esc(item.label) +
+                (item.unit ? ' (' + esc(item.unit) + ')' : '') + '</option>';
+        }).join('');
+    }
+
+    function renderMetricDefinitionsTable() {
+        const container = document.getElementById('metricDefinitionsTable');
+        if (!container) return;
+        const items = state.healthDefinitions || [];
+        const rows = items.map(function (item) {
+            return '<tr><td><span class="mono">' + esc(item.metric_key) + '</span></td>' +
+                '<td>' + esc(item.label) + '</td><td>' + esc(definitionCategoryLabel(item.category)) + '</td>' +
+                '<td>' + esc(item.unit || '—') + '</td>' +
+                '<td>' + (item.min_value !== null ? formatNumber(item.min_value) : '—') + ' – ' +
+                (item.max_value !== null ? formatNumber(item.max_value) : '—') + '</td>' +
+                '<td>' + (item.is_active ? '<span class="badge badge-success">Aktif</span>' :
+                    '<span class="badge badge-warning">Pasif</span>') + '</td>' +
+                '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-definition-toggle="' + item.id +
+                '" data-active="' + (item.is_active ? 'false' : 'true') + '">' +
+                (item.is_active ? 'Pasife al' : 'Aktifleştir') + '</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" data-definition-delete="' + item.id + '">Sil</button>' +
+                '</td></tr>';
+        }).join('') || '<tr><td colspan="7" class="empty">Metrik tanımı yok.</td></tr>';
+        container.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th>Key</th><th>Etiket</th><th>Kategori</th><th>Birim</th><th>Aralık</th><th>Durum</th><th></th>' +
+            '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }
+
+    async function refreshMetricDefinitions() {
+        const response = await api('/health/metric-definitions?include_inactive=true');
+        state.healthDefinitions = response.data || [];
+        renderMetricDefinitionsTable();
+        const select = document.getElementById('metricName');
+        if (select) select.innerHTML = adminMetricOptionsHTML();
+    }
+
+    async function saveMetricDefinition(form) {
+        const payload = {
+            metric_key: form.elements.metric_key.value.trim(),
+            label: form.elements.label.value.trim(),
+            unit: form.elements.unit.value.trim(),
+            category: form.elements.category.value,
+            min_value: form.elements.min_value.value === '' ? null : Number(form.elements.min_value.value),
+            max_value: form.elements.max_value.value === '' ? null : Number(form.elements.max_value.value),
+            is_active: true
+        };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            await api('/health/metric-definitions', { method: 'POST', body: payload });
+            showToast('Metrik tanımı eklendi.', 'success');
+            form.reset();
+            await refreshMetricDefinitions();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function toggleMetricDefinition(id, isActive) {
+        try {
+            await api('/health/metric-definitions/' + encodeURIComponent(id), {
+                method: 'PATCH', body: { is_active: isActive }
+            });
+            showToast(isActive ? 'Metrik aktifleştirildi.' : 'Metrik pasife alındı.', 'success');
+            await refreshMetricDefinitions();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function deleteMetricDefinition(id) {
+        if (!await MedicalDialog.confirm('Bu metrik tanımı silinsin mi?', {
+            title: 'Metrik tanımını sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
+        try {
+            await api('/health/metric-definitions/' + encodeURIComponent(id), { method: 'DELETE' });
+            showToast('Metrik tanımı silindi.', 'success');
+            await refreshMetricDefinitions();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
     async function renderHealth() {
-        const usersResponse = await api('/users?page=1&per_page=100');
+        const [usersResponse, definitionsResponse] = await Promise.all([
+            api('/users?page=1&per_page=100'),
+            api('/health/metric-definitions?include_inactive=true')
+        ]);
         const users = usersResponse.data || [];
+        state.healthDefinitions = definitionsResponse.data || [];
 
         if (!users.length) {
             contentArea.innerHTML =
@@ -963,10 +1087,7 @@
             '<div class="card-head"><div class="card-title">Yeni Ölçüm Ekle</div></div>' +
             '<form id="healthForm" class="form-grid">' +
             '<div class="field"><label class="label" for="metricName">Metrik</label>' +
-            '<input class="input" id="metricName" list="metricNames" placeholder="weight" required>' +
-            '<datalist id="metricNames"><option value="weight"><option value="heart_rate">' +
-            '<option value="blood_pressure"><option value="glucose"><option value="temperature">' +
-            '<option value="oxygen_saturation"></datalist></div>' +
+            '<select class="select" id="metricName" required>' + adminMetricOptionsHTML() + '</select></div>' +
             '<div class="field"><label class="label" for="metricValue">Değer</label>' +
             '<input class="input" id="metricValue" type="number" step="0.01" placeholder="72.5" required></div>' +
             '<div class="field"><label class="label" for="metricUnit">Birim</label>' +
@@ -982,6 +1103,30 @@
             '<div class="kv-list" id="healthUserInfo"></div>' +
             '</div>' +
             '</div>' +
+            '</div>' +
+            '<div class="card" style="margin-top:16px">' +
+            '<div class="card-head"><div class="card-title">Metrik Tanımları</div>' +
+            '<span class="hint">Hastaların seçebileceği metrik kataloğu</span></div>' +
+            '<form data-form="metric-definition" id="metricDefinitionForm">' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="definitionKey">Key</label>' +
+            '<input class="input" id="definitionKey" name="metric_key" required placeholder="weight"></div>' +
+            '<div class="field"><label class="label" for="definitionLabel">Etiket</label>' +
+            '<input class="input" id="definitionLabel" name="label" required placeholder="Kilo"></div>' +
+            '<div class="field"><label class="label" for="definitionUnit">Birim</label>' +
+            '<input class="input" id="definitionUnit" name="unit" placeholder="kg"></div>' +
+            '<div class="field"><label class="label" for="definitionCategory">Kategori</label>' +
+            '<select class="select" id="definitionCategory" name="category">' +
+            '<option value="weight">Kilo</option><option value="blood_pressure">Tansiyon</option>' +
+            '<option value="pulse">Nabız</option><option value="glucose">Kan Şekeri</option>' +
+            '<option value="temperature">Sıcaklık</option><option value="spo2">Oksijen</option>' +
+            '<option value="other">Diğer</option></select></div>' +
+            '<div class="field"><label class="label" for="definitionMin">Min değer</label>' +
+            '<input class="input" id="definitionMin" name="min_value" type="number" step="any"></div>' +
+            '<div class="field"><label class="label" for="definitionMax">Max değer</label>' +
+            '<input class="input" id="definitionMax" name="max_value" type="number" step="any"></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Tanım ekle</button></div>' +
+            '</form><div id="metricDefinitionsTable" style="margin-top:16px"></div></div>' +
             '<div class="section-head"><h3 class="section-title">Ölçümler</h3></div>' +
             '<div id="healthTable"></div>';
 
@@ -995,6 +1140,17 @@
 
         const form = document.getElementById('healthForm');
         if (form) form.addEventListener('submit', handleHealthSubmit);
+        const metricName = document.getElementById('metricName');
+        if (metricName) {
+            metricName.addEventListener('change', function () {
+                const definition = state.healthDefinitions.find(function (item) {
+                    return item.metric_key === metricName.value && item.is_active;
+                });
+                const unit = document.getElementById('metricUnit');
+                if (unit) unit.value = definition ? (definition.unit || '') : '';
+            });
+        }
+        renderMetricDefinitionsTable();
 
         await loadHealth();
     }

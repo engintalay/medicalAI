@@ -61,6 +61,20 @@ CREATE TABLE IF NOT EXISTS rag_documents (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Hasta/admin metrik kataloğu
+CREATE TABLE IF NOT EXISTS health_metric_definitions (
+    definition_id SERIAL PRIMARY KEY,
+    metric_key VARCHAR(50) UNIQUE NOT NULL,
+    label VARCHAR(100) NOT NULL,
+    unit VARCHAR(20),
+    category VARCHAR(50) NOT NULL DEFAULT 'other',
+    min_value DECIMAL(8, 2),
+    max_value DECIMAL(8, 2),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ---------------------------------------------------------
 -- 5. User Uploads Tablosu: Dosyaların metadata'sı
 -- ---------------------------------------------------------

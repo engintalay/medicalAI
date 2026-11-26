@@ -338,7 +338,8 @@ sudo systemctl status medical-ai
 
 ## 3. API özeti
 
-- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (GET filtreli, POST, PUT, DELETE),
+- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metric-definitions`,
+  `/api/user/metrics` (GET filtreli, POST, PUT, DELETE),
   `/api/uploads`, `/api/upload`, `/api/uploads/{id}/file`, `/api/uploads/{id}/extract`, `/api/rag/ingest|add-document`, `/api/rag/upload`,
   `/api/rag/import-url`, `/api/rag/drug-search`, `/api/chat` (opsiyonel dosya),
   `/api/conversations` (arama + arşiv durumu), `/api/conversations/{id}`,
@@ -346,7 +347,7 @@ sudo systemctl status medical-ai
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
   `/admin/api/users` (GET list, POST create, PATCH status), `/admin/api/monitoring`, `/admin/api/uploads/stats`,
-  `/admin/api/health/*`, `/admin/api/research`, `/admin/api/rag/documents`,
+  `/admin/api/health/*`, `/admin/api/health/metric-definitions`, `/admin/api/research`, `/admin/api/rag/documents`,
   `/admin/api/rag/ingest`, `/admin/api/rag/upload`, `/admin/api/rag/import-url`,
   `/admin/api/rag/drug-search`, `/admin/api/utils/secret/{key}`.
 - Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
@@ -405,7 +406,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 92 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 97 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -414,7 +415,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   prospektus.co ilaç arama ve URL içe aktarma, sohbet arama/arşiv/geri yükleme/silme,
   dosya önizleme ve kalıcı metin çıkarma sonuçları, ölçüm tarihi çıkarma ve export,
   LLM Advanced ayar sekmesi, thinking kapalı ve reasoning yanıtı yedeklemesi,
-  vision Markdown çıktısı ve güvenli Markdown görüntüleme).
+  vision Markdown çıktısı ve güvenli Markdown görüntüleme, admin yönetimli metrik kataloğu).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -432,7 +433,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/llm` | LLM ayarları: Temel + **Advanced** (token, timeout, RAG ve dosya sınırları) |
 | `/admin/users` | Kullanıcı listesi + **yeni kullanıcı oluşturma** (admin/hasta) + aktif/pasif |
 | `/admin/storage` | Disk kullanımı |
-| `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) |
+| `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) + **metrik tanımı kataloğu yönetimi** |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
 | `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
 | `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **ilaç arama/seçim**, listeleme, silme |
@@ -442,7 +443,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
 | `/patient/chat` | RAG sohbeti, **sohbet arama**, arşivleme/geri yükleme/silme, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
-| `/patient/metrics` | Ölçüm tarihi girişi, **düzenleme**, **seçili metriklerde tek grafik + tarih aralığı**, arama, kategori filtresi, çoklu seçim/toplu silme |
+| `/patient/metrics` | Admin tanımlı **combobox’tan metrik seçimi**, ölçüm tarihi girişi, **düzenleme**, **seçili metriklerde tek grafik + tarih aralığı**, arama, kategori filtresi, çoklu seçim/toplu silme |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), **görsel/PDF önizleme**, kalıcı metin çıkarma sonuçları, çoklu seçim/toplu silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |

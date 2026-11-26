@@ -15,6 +15,26 @@ class HealthMetricCreate(BaseModel):
     recorded_at: Optional[datetime] = None
 
 
+class HealthMetricDefinitionCreate(BaseModel):
+    metric_key: str
+    label: str
+    unit: str | None = None
+    category: str = "other"
+    min_value: float | None = None
+    max_value: float | None = None
+    is_active: bool = True
+
+
+class HealthMetricDefinitionUpdate(BaseModel):
+    metric_key: str | None = None
+    label: str | None = None
+    unit: str | None = None
+    category: str | None = None
+    min_value: float | None = None
+    max_value: float | None = None
+    is_active: bool | None = None
+
+
 class HealthMetricUpdate(BaseModel):
     """HealthMetrics update request"""
     metric_name: Optional[str] = None

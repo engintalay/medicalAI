@@ -105,6 +105,21 @@ def main() -> int:
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS health_metric_definitions (
+            definition_id SERIAL PRIMARY KEY,
+            metric_key VARCHAR(50) UNIQUE NOT NULL,
+            label VARCHAR(100) NOT NULL,
+            unit VARCHAR(20),
+            category VARCHAR(50) NOT NULL DEFAULT 'other',
+            min_value DECIMAL(8, 2),
+            max_value DECIMAL(8, 2),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS user_uploads (
             upload_id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -279,6 +294,28 @@ def main() -> int:
             ON CONFLICT (key) DO NOTHING;
             """,
             (key, value, desc),
+        )
+
+    # --- Varsayılan metrik kataloğu (admin sonradan yönetir) ---
+    metric_definitions = [
+        ("weight", "Kilo", "kg", "weight", 20, 350),
+        ("height", "Boy", "cm", "other", 50, 250),
+        ("sistolik", "Sistolik", "mmHg", "blood_pressure", 70, 250),
+        ("diyastolik", "Diyastolik", "mmHg", "blood_pressure", 40, 150),
+        ("nabız", "Nabız", "bpm", "pulse", 30, 220),
+        ("glucose", "Kan Şekeri", "mg/dL", "glucose", 20, 600),
+        ("temperature", "Vücut Sıcaklığı", "°C", "temperature", 30, 45),
+        ("spo2", "SpO2", "%", "spo2", 50, 100),
+    ]
+    for key, label, unit, category, min_value, max_value in metric_definitions:
+        cur.execute(
+            """
+            INSERT INTO health_metric_definitions
+                (metric_key, label, unit, category, min_value, max_value)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (metric_key) DO NOTHING
+            """,
+            (key, label, unit, category, min_value, max_value),
         )
 
     # --- Admin kullanıcısı ---

@@ -158,6 +158,51 @@ async def patient_dashboard(user: dict = Depends(require_patient)):
             conn.close()
 
 
+def _metric_definition(conn, metric_key: str, active_only: bool = True):
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT definition_id, metric_key, label, unit, category, min_value, max_value, "
+            "is_active, created_at, updated_at FROM health_metric_definitions "
+            "WHERE metric_key = %s AND (%s OR is_active = TRUE)",
+            (metric_key, not active_only),
+        )
+        row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "metric_key": row[1], "label": row[2], "unit": row[3] or "",
+        "category": row[4], "min_value": _json_value(row[5]), "max_value": _json_value(row[6]),
+        "is_active": row[7], "created_at": _json_value(row[8]), "updated_at": _json_value(row[9]),
+    }
+
+
+@router.get("/api/user/metric-definitions", summary="Aktif Metrik Tanımları")
+async def list_metric_definitions(user: dict = Depends(require_patient)):
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT definition_id, metric_key, label, unit, category, min_value, max_value, "
+                "is_active, created_at, updated_at FROM health_metric_definitions "
+                "WHERE is_active = TRUE ORDER BY category, label"
+            )
+            rows = cur.fetchall()
+        data = []
+        for row in rows:
+            data.append({
+                "id": row[0], "metric_key": row[1], "label": row[2], "unit": row[3] or "",
+                "category": row[4], "min_value": _json_value(row[5]), "max_value": _json_value(row[6]),
+                "is_active": row[7], "created_at": _json_value(row[8]), "updated_at": _json_value(row[9]),
+            })
+        return JSONResponse(status_code=200, content={"success": True, "data": data})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
 @router.get("/api/user/metrics", summary="Grafik için Filtreli Metrikler")
 async def list_metrics(
     name: list[str] | None = Query(None),
@@ -227,11 +272,25 @@ async def add_metric(body: MetricRequest, user: dict = Depends(require_patient))
     conn = None
     try:
         conn = _config.connect_db()
+        definition = _metric_definition(conn, body.name.strip())
+        unit = body.unit
+        if definition:
+            unit = unit or definition["unit"] or None
+            if definition["min_value"] is not None and body.value < definition["min_value"]:
+                return JSONResponse(status_code=400, content={
+                    "success": False,
+                    "error": f"{definition['label']} için minimum değer {definition['min_value']}."
+                })
+            if definition["max_value"] is not None and body.value > definition["max_value"]:
+                return JSONResponse(status_code=400, content={
+                    "success": False,
+                    "error": f"{definition['label']} için maksimum değer {definition['max_value']}."
+                })
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO health_metrics (user_id, metric_name, value, unit, recorded_at) "
                 "VALUES (%s, %s, %s, %s, %s) RETURNING metric_id",
-                (int(user["user_id"]), body.name.strip(), body.value, body.unit, recorded_at),
+                (int(user["user_id"]), body.name.strip(), body.value, unit, recorded_at),
             )
             metric_id = cur.fetchone()[0]
         conn.commit()
@@ -264,13 +323,27 @@ async def update_metric(
     conn = None
     try:
         conn = _config.connect_db()
+        definition = _metric_definition(conn, body.name.strip())
+        unit = body.unit
+        if definition:
+            unit = unit or definition["unit"] or None
+            if definition["min_value"] is not None and body.value < definition["min_value"]:
+                return JSONResponse(status_code=400, content={
+                    "success": False,
+                    "error": f"{definition['label']} için minimum değer {definition['min_value']}."
+                })
+            if definition["max_value"] is not None and body.value > definition["max_value"]:
+                return JSONResponse(status_code=400, content={
+                    "success": False,
+                    "error": f"{definition['label']} için maksimum değer {definition['max_value']}."
+                })
         with conn.cursor() as cur:
             cur.execute(
                 "UPDATE health_metrics SET metric_name = %s, value = %s, unit = %s, "
                 "recorded_at = COALESCE(%s, recorded_at) "
                 "WHERE metric_id = %s AND user_id = %s "
                 "RETURNING metric_id, metric_name, value, unit, recorded_at",
-                (body.name.strip(), body.value, body.unit, recorded_at,
+                (body.name.strip(), body.value, unit, recorded_at,
                  metric_id, int(user["user_id"])),
             )
             row = cur.fetchone()

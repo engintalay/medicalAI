@@ -25,7 +25,8 @@
         chat: { conversations: [], activeId: null, messages: [], upload: null },
         metrics: {
             items: [], query: '', category: '', selected: new Set(), editingId: null,
-            chartNames: new Set(), chartStart: '', chartEnd: '', chartData: []
+            chartNames: new Set(), chartStart: '', chartEnd: '', chartData: [],
+            definitions: []
         },
         uploads: { items: [], selected: new Set(), previews: {} },
         toastTimer: null
@@ -1105,9 +1106,41 @@
         }).join('') : '<span class="hint">Grafik için önce metrik kaydedin.</span>';
     }
 
+    function metricDefinitionOptionsHTML(selectedKey, includeLegacy) {
+        const definitions = state.metrics.definitions || [];
+        if (!definitions.length) {
+            return '<option value="">Admin henüz metrik tanımlamadı</option>';
+        }
+        const groups = new Map();
+        definitions.forEach(function (item) {
+            if (!groups.has(item.category)) groups.set(item.category, []);
+            groups.get(item.category).push(item);
+        });
+        let html = '<option value="">Metrik seçin</option>';
+        groups.forEach(function (items, category) {
+            html += '<optgroup label="' + esc(metricCategoryLabel(category)) + '">';
+            items.forEach(function (item) {
+                html += '<option value="' + esc(item.metric_key) + '"' +
+                    (item.metric_key === selectedKey ? ' selected' : '') + '>' +
+                    esc(item.label) + (item.unit ? ' (' + esc(item.unit) + ')' : '') + '</option>';
+            });
+            html += '</optgroup>';
+        });
+        if (includeLegacy && selectedKey && !definitions.some(function (item) {
+            return item.metric_key === selectedKey;
+        })) {
+            html = '<option value="' + esc(selectedKey) + '" selected>' + esc(selectedKey) + ' (eski kayıt)</option>' + html;
+        }
+        return html;
+    }
+
     async function renderMetrics() {
-        const response = await api('/api/user/dashboard');
+        const [response, definitionsResponse] = await Promise.all([
+            api('/api/user/dashboard'),
+            api('/api/user/metric-definitions')
+        ]);
         state.metrics.items = (response.data && response.data.metrics) || [];
+        state.metrics.definitions = definitionsResponse.data || [];
         state.metrics.query = '';
         state.metrics.category = '';
         state.metrics.selected = new Set();
@@ -1122,12 +1155,13 @@
             '<p class="page-sub">Ölçüm tarihini gir; sistem giriş zamanından bağımsız olarak ölçüm tarihine göre sıralanır.</p></div>' +
             '<form class="card" data-form="metric" id="metricForm">' +
             '<div class="form-grid">' +
-            '<div class="field"><label class="label" for="metricName">Metrik adı</label>' +
-            '<input class="input" id="metricName" name="name" required placeholder="Örn. weight, tansiyon"></div>' +
+            '<div class="field"><label class="label" for="metricName">Metrik</label>' +
+            '<select class="select" id="metricName" name="name" required>' +
+            metricDefinitionOptionsHTML('', false) + '</select></div>' +
             '<div class="field"><label class="label" for="metricValue">Değer</label>' +
             '<input class="input" id="metricValue" name="value" type="number" step="any" required></div>' +
             '<div class="field"><label class="label" for="metricUnit">Birim</label>' +
-            '<input class="input" id="metricUnit" name="unit" placeholder="Örn. kg, mmHg"></div>' +
+            '<input class="input" id="metricUnit" name="unit" readonly placeholder="Metrik seçince dolur"></div>' +
             '<div class="field"><label class="label" for="metricRecordedAt">Ölçüm tarihi ve saati</label>' +
             '<input class="input" id="metricRecordedAt" name="recorded_at" type="datetime-local" required ' +
             'value="' + localDateTimeInputValue() + '"></div>' +
@@ -1167,6 +1201,16 @@
 
         const search = document.getElementById('metricSearch');
         const category = document.getElementById('metricCategoryFilter');
+        const metricName = document.getElementById('metricName');
+        if (metricName) {
+            metricName.addEventListener('change', function () {
+                const definition = state.metrics.definitions.find(function (item) {
+                    return item.metric_key === metricName.value;
+                });
+                const unit = document.getElementById('metricUnit');
+                if (unit) unit.value = definition ? (definition.unit || '') : '';
+            });
+        }
         if (search) {
             search.addEventListener('input', function () {
                 state.metrics.query = search.value;
@@ -1361,7 +1405,8 @@
         const form = document.getElementById('metricForm');
         if (!item || !form) return;
         state.metrics.editingId = item.id;
-        form.elements.name.value = item.name || '';
+        form.elements.name.innerHTML = metricDefinitionOptionsHTML(item.name, true);
+        form.elements.name.value = item.name;
         form.elements.value.value = item.value;
         form.elements.unit.value = item.unit || '';
         form.elements.recorded_at.value = localDateTimeInputValue(item.date);
@@ -1378,6 +1423,9 @@
         if (!form) return;
         state.metrics.editingId = null;
         form.reset();
+        form.elements.name.innerHTML = metricDefinitionOptionsHTML('', false);
+        const unit = document.getElementById('metricUnit');
+        if (unit) unit.value = '';
         const submit = document.getElementById('metricSubmitBtn');
         const cancel = document.getElementById('metricCancelEditBtn');
         if (submit) submit.textContent = 'Kaydet';

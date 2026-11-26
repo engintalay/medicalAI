@@ -28,7 +28,15 @@ class JSONResponse(_FastJSONResponse):
 
 from config.loader import get_config_loader
 from config.auth_service import auth_service
-from models.health import HealthMetricCreate, HealthMetricUpdate, HealthMetricResponse, format_metric_response, format_metric_list
+from models.health import (
+    HealthMetricCreate,
+    HealthMetricUpdate,
+    HealthMetricResponse,
+    HealthMetricDefinitionCreate,
+    HealthMetricDefinitionUpdate,
+    format_metric_response,
+    format_metric_list,
+)
 from routines.health import (
     create_health_metric,
     get_health_metrics,
@@ -996,6 +1004,141 @@ def _get_conn():
         user=_config.get('db_user', 'medical_user'),
         password=_config.get('db_password', '')
     )
+
+
+DEFINITION_CATEGORIES = {
+    "blood_pressure", "pulse", "weight", "glucose", "temperature", "spo2", "other"
+}
+
+
+def _definition_dict(row):
+    return {
+        "id": row[0], "metric_key": row[1], "label": row[2], "unit": row[3] or "",
+        "category": row[4], "min_value": float(row[5]) if row[5] is not None else None,
+        "max_value": float(row[6]) if row[6] is not None else None,
+        "is_active": row[7], "created_at": row[8], "updated_at": row[9],
+    }
+
+
+def _definition_error(metric_key, label, category, min_value, max_value):
+    if not re.fullmatch(r"[a-z0-9_]{1,50}", metric_key or ""):
+        return "Metrik key yalnızca küçük harf, sayı ve alt çizgi içerebilir."
+    if not (label or "").strip():
+        return "Metrik etiketi zorunludur."
+    if category not in DEFINITION_CATEGORIES:
+        return "Geçersiz metrik kategorisi."
+    if min_value is not None and max_value is not None and min_value > max_value:
+        return "Minimum değer maksimum değerden büyük olamaz."
+    return None
+
+
+@health_router.get("/metric-definitions", summary="Metrik Tanımları")
+async def list_metric_definitions(include_inactive: bool = False):
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT definition_id, metric_key, label, unit, category, min_value, max_value, "
+                "is_active, created_at, updated_at FROM health_metric_definitions "
+                "WHERE (%s OR is_active = TRUE) ORDER BY category, label",
+                (bool(include_inactive),),
+            )
+            rows = cur.fetchall()
+        return JSONResponse(status_code=200, content={
+            "success": True, "data": [_definition_dict(row) for row in rows]
+        })
+    finally:
+        conn.close()
+
+
+@health_router.post("/metric-definitions", summary="Metrik Tanımı Ekle")
+async def create_metric_definition(body: HealthMetricDefinitionCreate):
+    metric_key = body.metric_key.strip().lower()
+    label = body.label.strip()
+    error = _definition_error(metric_key, label, body.category, body.min_value, body.max_value)
+    if error:
+        return JSONResponse(status_code=400, content={"success": False, "error": error})
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO health_metric_definitions "
+                "(metric_key, label, unit, category, min_value, max_value, is_active) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "RETURNING definition_id, metric_key, label, unit, category, min_value, max_value, "
+                "is_active, created_at, updated_at",
+                (metric_key, label, body.unit, body.category, body.min_value, body.max_value, body.is_active),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return JSONResponse(status_code=201, content={"success": True, "data": _definition_dict(row)})
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return JSONResponse(status_code=400, content={"success": False, "error": "Bu metrik key zaten mevcut."})
+    finally:
+        conn.close()
+
+
+@health_router.patch("/metric-definitions/{definition_id}", summary="Metrik Tanımını Güncelle")
+async def update_metric_definition(definition_id: int, body: HealthMetricDefinitionUpdate):
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT definition_id, metric_key, label, unit, category, min_value, max_value, "
+                "is_active, created_at, updated_at FROM health_metric_definitions WHERE definition_id = %s",
+                (definition_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"success": False, "error": "Metrik tanımı bulunamadı."})
+            current = _definition_dict(row)
+            metric_key = (body.metric_key if body.metric_key is not None else current["metric_key"]).strip().lower()
+            label = (body.label if body.label is not None else current["label"]).strip()
+            category = body.category if body.category is not None else current["category"]
+            min_value = body.min_value if "min_value" in body.model_fields_set else current["min_value"]
+            max_value = body.max_value if "max_value" in body.model_fields_set else current["max_value"]
+            is_active = body.is_active if body.is_active is not None else current["is_active"]
+            unit = body.unit if "unit" in body.model_fields_set else current["unit"]
+            error = _definition_error(metric_key, label, category, min_value, max_value)
+            if error:
+                return JSONResponse(status_code=400, content={"success": False, "error": error})
+            cur.execute(
+                "UPDATE health_metric_definitions SET metric_key=%s, label=%s, unit=%s, category=%s, "
+                "min_value=%s, max_value=%s, is_active=%s, updated_at=NOW() WHERE definition_id=%s "
+                "RETURNING definition_id, metric_key, label, unit, category, min_value, max_value, "
+                "is_active, created_at, updated_at",
+                (metric_key, label, unit, category, min_value, max_value, is_active, definition_id),
+            )
+            updated = cur.fetchone()
+        conn.commit()
+        return JSONResponse(status_code=200, content={"success": True, "data": _definition_dict(updated)})
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return JSONResponse(status_code=400, content={"success": False, "error": "Bu metrik key zaten mevcut."})
+    finally:
+        conn.close()
+
+
+@health_router.delete("/metric-definitions/{definition_id}", summary="Metrik Tanımını Sil")
+async def delete_metric_definition(definition_id: int):
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT metric_key FROM health_metric_definitions WHERE definition_id=%s", (definition_id,))
+            row = cur.fetchone()
+            if not row:
+                return JSONResponse(status_code=404, content={"success": False, "error": "Metrik tanımı bulunamadı."})
+            cur.execute("SELECT 1 FROM health_metrics WHERE metric_name=%s LIMIT 1", (row[0],))
+            if cur.fetchone():
+                return JSONResponse(status_code=400, content={
+                    "success": False, "error": "Bu metrik kullanıldığı için silinemez; pasife alabilirsiniz."
+                })
+            cur.execute("DELETE FROM health_metric_definitions WHERE definition_id=%s", (definition_id,))
+        conn.commit()
+        return JSONResponse(status_code=200, content={"success": True, "message": "Metrik tanımı silindi."})
+    finally:
+        conn.close()
 
 
 @health_router.post("/metrics", summary="Health Metric Ekle")

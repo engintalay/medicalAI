@@ -2197,6 +2197,175 @@
         "description": "Hasta: grafik için metrik adı ve tarih aralığına göre filtreli veri"
       },
       "response": []
+    },
+    {
+      "name": "GET /api/user/metric-definitions",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/metric-definitions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "user",
+            "metric-definitions"
+          ]
+        },
+        "description": "Hasta: aktif metrik kataloğu"
+      },
+      "response": []
+    },
+    {
+      "name": "GET /admin/api/health/metric-definitions",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/health/metric-definitions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "health",
+            "metric-definitions"
+          ]
+        },
+        "description": "Admin: metrik tanımları (include_inactive)"
+      },
+      "response": []
+    },
+    {
+      "name": "POST /admin/api/health/metric-definitions",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/health/metric-definitions",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "health",
+            "metric-definitions"
+          ]
+        },
+        "description": "Admin: metrik tanımı ekle",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"metric_key\": \"weight\",\n  \"label\": \"Kilo\",\n  \"unit\": \"kg\",\n  \"category\": \"weight\",\n  \"min_value\": 20,\n  \"max_value\": 350\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "PATCH /admin/api/health/metric-definitions/:id",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/health/metric-definitions/:id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "health",
+            "metric-definitions",
+            ":id"
+          ]
+        },
+        "description": "Admin: metrik tanımını aktif/pasif yap",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"is_active\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "DELETE /admin/api/health/metric-definitions/:id",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/health/metric-definitions/:id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "health",
+            "metric-definitions",
+            ":id"
+          ]
+        },
+        "description": "Admin: kullanılmayan metrik tanımını sil"
+      },
+      "response": []
     }
   ]
 }
