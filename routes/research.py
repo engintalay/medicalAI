@@ -3,6 +3,7 @@
 # Kural: keyfi URL'den dış ağa istek YOK. İçerik istek gövdesinde gelir.
 # Public kayıtlar RAG'da user_id=NULL ile saklanır.
 
+import asyncio
 import json
 
 from fastapi import APIRouter, Request
@@ -119,7 +120,7 @@ async def create_research_public(body: ResearchRequest, request: Request):
     error = _admin_check(request)
     if error:
         return error
-    return _create(body)
+    return await asyncio.to_thread(_create, body)
 
 
 @router.get("/admin/api/research", summary="Araştırma Listesi")
@@ -180,11 +181,10 @@ def _create(body: ResearchRequest) -> JSONResponse:
 
 @router.post("/admin/api/research", summary="Araştırma Ekle")
 async def create_research_admin(body: ResearchRequest):
-    return _create(body)
+    return await asyncio.to_thread(_create, body)
 
 
-@router.put("/admin/api/research/{data_id}", summary="Araştırma Güncelle")
-async def update_research(data_id: int, body: ResearchUpdate):
+def _update_research_sync(data_id: int, body: ResearchUpdate) -> JSONResponse:
     conn = None
     try:
         conn = _config.connect_db()
@@ -220,6 +220,11 @@ async def update_research(data_id: int, body: ResearchUpdate):
     finally:
         if conn:
             conn.close()
+
+
+@router.put("/admin/api/research/{data_id}", summary="Araştırma Güncelle")
+async def update_research(data_id: int, body: ResearchUpdate):
+    return await asyncio.to_thread(_update_research_sync, data_id, body)
 
 
 @router.delete("/admin/api/research/{data_id}", summary="Araştırma Sil")

@@ -377,6 +377,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 - `/admin/config` üzerinden `llm_max_tokens` (varsayılan 256) ve `llm_timeout`
   (varsayılan 180 saniye) ayarlanabilir; yerel 27B modellerin cevap süresi buna göre belirlenir.
 - Vision için `vision_max_tokens` (1024) ve `vision_timeout` (180 saniye) ayrıca ayarlanabilir.
+- LLM ve embedding çağrıları `asyncio.to_thread` ile event loop dışına alınır; uzun
+  sohbet/RAG işlemleri sırasında `/health`, dashboard ve diğer hizmetler paralel yanıt verir.
 - Sohbete eklenen dosya vision LLM ile okunur; tansiyon, nabız, kilo, glukoz, sıcaklık
   ve SpO2 değerleri yalnızca geçerli aralıktaysa `health_metrics` tablosuna kaydedilir.
 - Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
@@ -386,11 +388,11 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 71 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 72 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
-  hasta metriği silme ve sahiplik kontrolü).
+  hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -456,5 +458,6 @@ GET /admin/users 200
 POST /api/chat 200 (medgemma, tek system mesajı, 56.9 sn)
 POST /api/uploads 200 → POST /api/chat upload_id ile 200 (görsel okuma + metin yanıtı)
 Örnek tansiyon görseli: 128/82 mmHg, 74 bpm → 3 metrik kaydedildi; toplam 117.4 sn
+Paralel test: sohbet beklerken /health 200 (maks 0.14 sn), dashboard 200 (~0.2 sn)
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

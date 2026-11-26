@@ -3,6 +3,8 @@
 # Alias'lar 01-shared-contracts.md'den: /api/rag/ingest ve /api/rag/add-document.
 # user_id her zaman JWT'den alınır; istek gövdesinden kabul edilmez.
 
+import asyncio
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse as _FastJSONResponse
@@ -66,13 +68,14 @@ def _ingest(body: IngestRequest, user_id: int) -> JSONResponse:
 @router.post("/api/rag/add-document", include_in_schema=False)
 async def rag_ingest(body: IngestRequest, user: dict = Depends(require_patient)):
     """Metni parçalar, yerel modelle embedding üretir ve rag_documents'a yazar."""
-    return _ingest(body, int(user["user_id"]))
+    return await asyncio.to_thread(_ingest, body, int(user["user_id"]))
 
 
 @router.post("/api/rag/ingest-url", summary="RAG URL/Research İçerik Ekle")
 async def rag_ingest_url(body: IngestUrlRequest, user: dict = Depends(require_patient)):
     """`ingest` ile aynı akış; research tarafı için sabit chunk ayarları kullanır."""
-    return _ingest(
+    return await asyncio.to_thread(
+        _ingest,
         IngestRequest(source=body.source, text=body.text, chunk_size=800, overlap=100),
         int(user["user_id"]),
     )
@@ -145,7 +148,7 @@ async def admin_rag_ingest(body: IngestRequest, request: Request):
     if error:
         return error
     # user_id=None -> public kapsam; hasta aramasında bu parçalar da görünür.
-    return _ingest(body, None)
+    return await asyncio.to_thread(_ingest, body, None)
 
 
 @router.delete("/admin/api/rag/documents/{source}", summary="Admin RAG Kaynağını Sil")

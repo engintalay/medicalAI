@@ -1,5 +1,7 @@
 """07 — RAG retrieval + /api/chat + çok turlu sohbet."""
 
+import threading
+import time
 import uuid
 
 from routes.chat import _llm_settings
@@ -63,6 +65,38 @@ def test_chat_messages_alternate_for_strict_templates(client, patient_headers, f
     assert conversation_roles[-1] == "user"
     for index, role in enumerate(conversation_roles):
         assert role == ("user" if index % 2 == 0 else "assistant")
+
+
+def test_slow_llm_does_not_block_other_requests(client, patient_headers, monkeypatch):
+    """LLM thread'de beklerken /health ve diğer istekler event loop'u kullanabilmeli."""
+    started = threading.Event()
+    release = threading.Event()
+    result = {}
+
+    def slow_llm(messages, settings):
+        started.set()
+        release.wait(5)
+        return "Test yanıtı"
+
+    monkeypatch.setattr("routes.chat._call_llm", slow_llm)
+
+    def run_chat():
+        result["response"] = client.post("/api/chat", headers=patient_headers, json={
+            "message": "Yavaş istek"
+        })
+
+    worker = threading.Thread(target=run_chat)
+    worker.start()
+    assert started.wait(10), "LLM çağrısı başlamadı"
+    before = time.monotonic()
+    health = client.get("/health")
+    elapsed = time.monotonic() - before
+    release.set()
+    worker.join(5)
+
+    assert health.status_code == 200
+    assert elapsed < 1.0, f"/health {elapsed:.2f}s bloke oldu"
+    assert result["response"].status_code == 200, result["response"].text
 
 
 def test_chat_token_and_timeout_config(client, patient_headers, fake_llm, cfg):

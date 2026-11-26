@@ -3,6 +3,7 @@
 # Retrieval (services.rag.search) ve generation (_call_llm) ayrı fonksiyonlardır.
 # Tıbbi guardrail her cevaba eklenir; tanı verilmez.
 
+import asyncio
 import json
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -314,9 +315,13 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
         except (TypeError, ValueError):
             top_k = 5
         retrieval_query = query or extracted_text[:600]
-        sources = rag.search(conn, user_id, retrieval_query, top_k=top_k, threshold=0.25)
+        sources = await asyncio.to_thread(
+            rag.search, conn, user_id, retrieval_query, top_k=top_k, threshold=0.25
+        )
 
-        answer = _call_llm(_build_messages(prompt_query, sources, history), settings)
+        answer = await asyncio.to_thread(
+            _call_llm, _build_messages(prompt_query, sources, history), settings
+        )
         if GUARDRAIL not in answer:
             answer = answer.rstrip() + "\n\n" + GUARDRAIL
 
