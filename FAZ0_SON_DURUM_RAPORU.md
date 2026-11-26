@@ -338,7 +338,7 @@ sudo systemctl status medical-ai
 
 ## 3. API özeti
 
-- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (POST, PUT, DELETE),
+- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (GET filtreli, POST, PUT, DELETE),
   `/api/uploads`, `/api/upload`, `/api/uploads/{id}/file`, `/api/uploads/{id}/extract`, `/api/rag/ingest|add-document`, `/api/rag/upload`,
   `/api/rag/import-url`, `/api/rag/drug-search`, `/api/chat` (opsiyonel dosya),
   `/api/conversations` (arama + arşiv durumu), `/api/conversations/{id}`,
@@ -405,7 +405,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 91 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 92 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -442,7 +442,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
 | `/patient/chat` | RAG sohbeti, **sohbet arama**, arşivleme/geri yükleme/silme, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
-| `/patient/metrics` | Ölçüm tarihi girişi, **düzenleme**, arama, kategori filtresi, çoklu seçim/toplu silme ve geçmiş |
+| `/patient/metrics` | Ölçüm tarihi girişi, **düzenleme**, **seçili metriklerde tek grafik + tarih aralığı**, arama, kategori filtresi, çoklu seçim/toplu silme |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), **görsel/PDF önizleme**, kalıcı metin çıkarma sonuçları, çoklu seçim/toplu silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
@@ -475,6 +475,7 @@ POST /api/user/metrics      201  → GET /api/user/dashboard 200
 DELETE /api/user/metrics/{id} 200 → dashboard'da kayıt kalmadı
 POST /api/user/metrics recorded_at=2024-01-02 → ölçüm tarihi 2024, giriş zamanı 2026
 PUT /api/user/metrics/{id} 200 → değer/birim/ölçüm tarihi güncellendi
+GET /api/user/metrics?name=...&start=...&end=... 200 → grafik verisi 3 satır
 POST /api/reminders         201  → GET /api/reminders 200
 GET /api/uploads            200 · GET /api/conversations 200
 GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200

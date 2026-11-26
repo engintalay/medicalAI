@@ -23,7 +23,10 @@
         page: 'dashboard',
         authMode: 'login',
         chat: { conversations: [], activeId: null, messages: [], upload: null },
-        metrics: { items: [], query: '', category: '', selected: new Set(), editingId: null },
+        metrics: {
+            items: [], query: '', category: '', selected: new Set(), editingId: null,
+            chartNames: new Set(), chartStart: '', chartEnd: '', chartData: []
+        },
         uploads: { items: [], selected: new Set(), previews: {} },
         toastTimer: null
     };
@@ -419,6 +422,24 @@
             const metricEdit = event.target.closest('[data-metric-edit]');
             if (metricEdit) {
                 editMetric(Number(metricEdit.getAttribute('data-metric-edit')));
+                return;
+            }
+
+            const chartMetric = event.target.closest('[data-chart-metric]');
+            if (chartMetric) {
+                const name = chartMetric.getAttribute('data-chart-metric');
+                if (chartMetric.checked) state.metrics.chartNames.add(name);
+                else state.metrics.chartNames.delete(name);
+                return;
+            }
+
+            if (event.target.closest('#drawMetricsChartBtn')) {
+                drawMetricsChart();
+                return;
+            }
+
+            if (event.target.closest('#clearMetricsChartBtn')) {
+                clearMetricsChart();
                 return;
             }
 
@@ -1072,6 +1093,18 @@
         });
     }
 
+    function chartMetricOptionsHTML() {
+        const names = Array.from(new Set(state.metrics.items.map(function (item) { return item.name; })))
+            .filter(Boolean).sort(function (a, b) { return a.localeCompare(b, 'tr'); });
+        return names.length ? names.map(function (name) {
+            const item = state.metrics.items.find(function (row) { return row.name === name; });
+            return '<label class="inline-check chart-metric-check">' +
+                '<input type="checkbox" data-chart-metric="' + esc(name) + '">' +
+                esc(metricCategoryLabel(metricCategory(name))) + ' · ' + esc(name) +
+                (item && item.unit ? ' (' + esc(item.unit) + ')' : '') + '</label>';
+        }).join('') : '<span class="hint">Grafik için önce metrik kaydedin.</span>';
+    }
+
     async function renderMetrics() {
         const response = await api('/api/user/dashboard');
         state.metrics.items = (response.data && response.data.metrics) || [];
@@ -1079,6 +1112,10 @@
         state.metrics.category = '';
         state.metrics.selected = new Set();
         state.metrics.editingId = null;
+        state.metrics.chartNames = new Set();
+        state.metrics.chartStart = '';
+        state.metrics.chartEnd = '';
+        state.metrics.chartData = [];
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Metriklerim</h2>' +
@@ -1097,6 +1134,20 @@
             '</div><div class="form-actions"><button type="submit" class="btn btn-primary" id="metricSubmitBtn">Kaydet</button>' +
             '<button type="button" class="btn btn-secondary hidden" id="metricCancelEditBtn">Vazgeç</button></div>' +
             '</form>' +
+            '<div class="card metrics-chart-card">' +
+            '<div class="card-head"><div class="card-title">Metrik Grafiği</div>' +
+            '<span class="hint">Seçili metrikler tek grafikte karşılaştırılır.</span></div>' +
+            '<div class="field"><span class="label">Grafik metrikleri</span>' +
+            '<div class="chart-metric-list" id="chartMetricList">' + chartMetricOptionsHTML() + '</div></div>' +
+            '<div class="form-grid chart-date-grid">' +
+            '<div class="field"><label class="label" for="chartStart">Başlangıç tarihi</label>' +
+            '<input class="input" id="chartStart" type="datetime-local"></div>' +
+            '<div class="field"><label class="label" for="chartEnd">Bitiş tarihi</label>' +
+            '<input class="input" id="chartEnd" type="datetime-local"></div>' +
+            '</div><div class="form-actions">' +
+            '<button type="button" class="btn btn-primary" id="drawMetricsChartBtn">Grafiği çiz</button>' +
+            '<button type="button" class="btn btn-secondary" id="clearMetricsChartBtn">Temizle</button></div>' +
+            '<div id="metricsChart" class="metrics-chart"></div></div>' +
             '<div class="section-head"><div class="section-title">Geçmiş</div>' +
             '<span class="hint" id="metricsCount"></span></div>' +
             '<div class="toolbar">' +
@@ -1172,6 +1223,137 @@
             deleteButton.disabled = state.metrics.selected.size === 0;
             deleteButton.textContent = 'Seçilenleri sil (' + state.metrics.selected.size + ')';
         }
+    }
+
+    async function drawMetricsChart() {
+        const names = Array.from(state.metrics.chartNames);
+        if (!names.length) {
+            showToast('Grafik için en az bir metrik seçin.', 'error');
+            return;
+        }
+        const startEl = document.getElementById('chartStart');
+        const endEl = document.getElementById('chartEnd');
+        const start = startEl ? startEl.value : '';
+        const end = endEl ? endEl.value : '';
+        if (start && end && new Date(start) > new Date(end)) {
+            showToast('Başlangıç tarihi bitiş tarihinden sonra olamaz.', 'error');
+            return;
+        }
+        state.metrics.chartStart = start;
+        state.metrics.chartEnd = end;
+        const container = document.getElementById('metricsChart');
+        if (container) container.innerHTML = loadingHTML('Grafik hazırlanıyor...');
+        const params = new URLSearchParams();
+        names.forEach(function (name) { params.append('name', name); });
+        if (start) params.set('start', new Date(start).toISOString());
+        if (end) params.set('end', new Date(end).toISOString());
+        try {
+            const response = await api('/api/user/metrics?' + params.toString());
+            state.metrics.chartData = response.data || [];
+            renderMetricsChart();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            if (container) container.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
+        }
+    }
+
+    function renderMetricsChart() {
+        const container = document.getElementById('metricsChart');
+        if (!container) return;
+        const rows = state.metrics.chartData || [];
+        if (!rows.length) {
+            container.innerHTML = '<div class="empty">Seçilen tarih aralığında metrik kaydı bulunamadı.</div>';
+            return;
+        }
+        const groups = new Map();
+        rows.forEach(function (item) {
+            const time = new Date(item.date).getTime();
+            if (!Number.isFinite(time)) return;
+            if (!groups.has(item.name)) groups.set(item.name, []);
+            groups.get(item.name).push({ time: time, value: Number(item.value), unit: item.unit || '' });
+        });
+        const series = Array.from(groups.entries()).map(function (entry) {
+            entry[1].sort(function (a, b) { return a.time - b.time; });
+            return { name: entry[0], points: entry[1].slice(-150) };
+        }).filter(function (item) { return item.points.length; });
+        if (!series.length) {
+            container.innerHTML = '<div class="empty">Çizilebilir geçerli ölçüm bulunamadı.</div>';
+            return;
+        }
+
+        const colors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
+                        '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
+        const width = 900, height = 360;
+        const margin = { top: 20, right: 24, bottom: 54, left: 54 };
+        const plotWidth = width - margin.left - margin.right;
+        const plotHeight = height - margin.top - margin.bottom;
+        const allTimes = [];
+        series.forEach(function (item) { item.points.forEach(function (point) { allTimes.push(point.time); }); });
+        let minTime = Math.min.apply(null, allTimes);
+        let maxTime = Math.max.apply(null, allTimes);
+        if (minTime === maxTime) {
+            minTime -= 86400000;
+            maxTime += 86400000;
+        }
+        const x = function (time) { return margin.left + ((time - minTime) / (maxTime - minTime)) * plotWidth; };
+        let svg = '<svg class="metrics-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" ' +
+            'role="img" aria-label="Seçili metriklerin ölçüm tarihine göre grafiği">';
+        for (let index = 0; index <= 4; index += 1) {
+            const y = margin.top + (plotHeight * index) / 4;
+            svg += '<line x1="' + margin.left + '" y1="' + y + '" x2="' + (width - margin.right) +
+                '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"/>' +
+                '<text x="' + (margin.left - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
+                'class="chart-axis-label">' + (100 - index * 25) + '%</text>';
+        }
+        for (let index = 0; index <= 4; index += 1) {
+            const time = minTime + ((maxTime - minTime) * index) / 4;
+            const xPos = x(time);
+            svg += '<text x="' + xPos + '" y="' + (height - 20) + '" text-anchor="middle" ' +
+                'class="chart-axis-label">' + esc(new Date(time).toLocaleDateString('tr-TR')) + '</text>';
+        }
+        const legend = [];
+        series.forEach(function (item, seriesIndex) {
+            const values = item.points.map(function (point) { return point.value; });
+            const min = Math.min.apply(null, values);
+            const max = Math.max.apply(null, values);
+            const span = max - min || 1;
+            const color = colors[seriesIndex % colors.length];
+            const points = item.points.map(function (point) {
+                const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
+                return x(point.time).toFixed(2) + ',' + y.toFixed(2);
+            }).join(' ');
+            svg += '<polyline fill="none" stroke="' + color + '" stroke-width="2.5" ' +
+                'stroke-linejoin="round" stroke-linecap="round" points="' + points + '"/>';
+            item.points.forEach(function (point) {
+                const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
+                const title = esc(formatDateTime(point.time) + ' · ' + formatNumber(point.value, 2) + ' ' + point.unit);
+                svg += '<circle cx="' + x(point.time).toFixed(2) + '" cy="' + y.toFixed(2) + '" r="3.5" ' +
+                    'fill="' + color + '"><title>' + title + '</title></circle>';
+            });
+            const last = item.points[item.points.length - 1];
+            legend.push('<div class="chart-legend-item"><span class="chart-legend-color" style="background:' + color + '"></span>' +
+                '<strong>' + esc(item.name) + '</strong><span>' + esc(last.unit || '—') + '</span>' +
+                '<span class="hint">' + esc(formatNumber(min, 2)) + ' – ' + esc(formatNumber(max, 2)) +
+                ' · son ' + esc(formatNumber(last.value, 2)) + '</span></div>');
+        });
+        svg += '</svg>';
+        container.innerHTML = svg + '<div class="chart-legend">' + legend.join('') + '</div>' +
+            '<div class="card-note">Farklı birimleri karşılaştırmak için her metrik kendi min–maks aralığına normalize edildi. ' +
+            'Noktaların üzerine gelerek tarih ve ölçüm değerini görebilirsin.</div>';
+    }
+
+    function clearMetricsChart() {
+        state.metrics.chartNames = new Set();
+        state.metrics.chartStart = '';
+        state.metrics.chartEnd = '';
+        state.metrics.chartData = [];
+        document.querySelectorAll('[data-chart-metric]').forEach(function (input) { input.checked = false; });
+        const start = document.getElementById('chartStart');
+        const end = document.getElementById('chartEnd');
+        if (start) start.value = '';
+        if (end) end.value = '';
+        const container = document.getElementById('metricsChart');
+        if (container) container.innerHTML = '<div class="empty">Grafik için metrik ve tarih aralığı seçin.</div>';
     }
 
     function editMetric(metricId) {

@@ -178,6 +178,22 @@ body { background: #f8fafc; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; }
 .markdown-body th { background: #f8fafc; }
 
+/* ---------- Metrik grafiği ---------- */
+.metrics-chart-card { margin-bottom: 22px; }
+.chart-metric-list { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; }
+.chart-metric-check { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
+.chart-date-grid { margin-top: 16px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.metrics-chart { margin-top: 18px; }
+.metrics-chart-svg { width: 100%; height: auto; display: block; }
+.chart-axis-label { fill: #64748b; font-size: 11px; font-family: inherit; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.chart-legend-item {
+    display: grid; grid-template-columns: 10px auto auto; align-items: center; gap: 6px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 12px;
+}
+.chart-legend-item .hint { grid-column: 2 / 4; }
+.chart-legend-color { width: 10px; height: 10px; border-radius: 50%; }
+
 /* ---------- Mobil ---------- */
 @media (max-width: 900px) {
     .chat-layout { grid-template-columns: 190px minmax(0, 1fr); }

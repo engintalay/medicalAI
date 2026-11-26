@@ -158,6 +158,61 @@ async def patient_dashboard(user: dict = Depends(require_patient)):
             conn.close()
 
 
+@router.get("/api/user/metrics", summary="Grafik için Filtreli Metrikler")
+async def list_metrics(
+    name: list[str] | None = Query(None),
+    start: datetime | None = None,
+    end: datetime | None = None,
+    limit: int = 1000,
+    user: dict = Depends(require_patient),
+):
+    """Ölçüm tarihi ve metrik adına göre grafik verisini döndürür."""
+    if start is not None and start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end is not None and end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    if start is not None and end is not None and start > end:
+        return JSONResponse(status_code=400, content={
+            "success": False, "error": "Başlangıç tarihi bitiş tarihinden sonra olamaz."
+        })
+    names = [item.strip() for item in (name or []) if item and item.strip()]
+    conditions = ["user_id = %s"]
+    params = [int(user["user_id"])]
+    if start is not None:
+        conditions.append("recorded_at >= %s")
+        params.append(start)
+    if end is not None:
+        conditions.append("recorded_at <= %s")
+        params.append(end)
+    if names:
+        conditions.append("metric_name = ANY(%s)")
+        params.append(names)
+    params.append(max(1, min(int(limit), 1000)))
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT metric_id, metric_name, value, unit, recorded_at "
+                "FROM health_metrics WHERE " + " AND ".join(conditions) +
+                " ORDER BY recorded_at ASC LIMIT %s",
+                tuple(params),
+            )
+            rows = cur.fetchall()
+        return JSONResponse(status_code=200, content={"success": True, "data": [
+            {
+                "id": r[0], "name": r[1], "value": _json_value(r[2]),
+                "unit": r[3] or "", "date": _json_value(r[4]),
+            }
+            for r in rows
+        ]})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
 @router.post("/api/user/metrics", summary="Sağlık Metriği Ekle")
 async def add_metric(body: MetricRequest, user: dict = Depends(require_patient)):
     if not (body.name or "").strip():

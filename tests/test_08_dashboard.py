@@ -56,6 +56,40 @@ def test_metric_measurement_date_and_future_rejection(client, patient_headers):
     assert future.status_code == 400
 
 
+def test_filtered_metrics_endpoint_for_chart(client, patient_headers):
+    first_name = "chart-a-" + uuid.uuid4().hex[:8]
+    second_name = "chart-b-" + uuid.uuid4().hex[:8]
+    for name, value, recorded_at in (
+        (first_name, 10, "2024-01-01T00:00:00Z"),
+        (first_name, 20, "2024-01-15T00:00:00Z"),
+        (second_name, 30, "2024-01-10T00:00:00Z"),
+    ):
+        created = client.post("/api/user/metrics", headers=patient_headers, json={
+            "name": name, "value": value, "unit": "test", "recorded_at": recorded_at,
+        })
+        assert created.status_code == 201, created.text
+
+    response = client.get(
+        "/api/user/metrics", headers=patient_headers,
+        params=[
+            ("name", first_name), ("name", second_name),
+            ("start", "2024-01-05T00:00:00Z"), ("end", "2024-01-20T00:00:00Z"),
+        ],
+    )
+    assert response.status_code == 200, response.text
+    rows = response.json()["data"]
+    assert len(rows) == 2
+    assert {row["name"] for row in rows} == {first_name, second_name}
+    assert all("2024-01-05" <= row["date"][:10] <= "2024-01-20" for row in rows)
+
+    invalid = client.get(
+        "/api/user/metrics", headers=patient_headers,
+        params={"start": "2024-02-01T00:00:00Z", "end": "2024-01-01T00:00:00Z"},
+    )
+    assert invalid.status_code == 400
+    assert client.get("/api/user/metrics").status_code == 401
+
+
 def test_metric_update_and_validation(client, patient_headers):
     marker = "update-" + uuid.uuid4().hex[:8]
     created = client.post("/api/user/metrics", headers=patient_headers, json={
