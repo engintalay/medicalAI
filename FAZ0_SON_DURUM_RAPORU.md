@@ -443,6 +443,8 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
   pasife alınamaz. Pasif kullanıcının girişi 401 döner.
 
 Hasta paneli ayrı JWT (`patient_token`) kullanır; admin token'ı hasta ekranlarında geçmez.
+Tüm silme/arşiv onayları ortak `MedicalDialog` bileşeniyle modal dialog olarak gösterilir
+(Esc: vazgeç, Enter: onayla; odak yönetimi ve mobil uyum).
 Sohbet ekranında dosya seçildiğinde veya sohbet alanına sürüklendiğinde yükleme tamamlanır
 tamamlanmaz analiz otomatik başlar; kullanıcının ayrıca “Gönder”e basması gerekmez.
 Admin SPA'sındaki "Hasta Paneli ↗" ve hasta SPA'sındaki "Admin Paneli ↗" bağlantıları

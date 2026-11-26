@@ -301,6 +301,36 @@ textarea.input { min-height: 150px; resize: vertical; line-height: 1.5; }
 .toast.error { background: #dc2626; }
 .toast.info { background: #2563eb; }
 
+/* ---------- Onay dialog ---------- */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px);
+    display: grid; place-items: center; padding: 20px;
+}
+.modal-card {
+    width: 100%; max-width: 440px; background: var(--surface);
+    border-radius: 16px; padding: 26px; box-shadow: var(--shadow-lg);
+    text-align: center; animation: modal-in .16s ease-out;
+}
+.modal-icon { font-size: 34px; margin-bottom: 10px; }
+.modal-title { font-size: 19px; font-weight: 700; margin-bottom: 8px; }
+.modal-message {
+    color: var(--text-muted); font-size: 14px; line-height: 1.55;
+    white-space: pre-wrap; word-break: break-word;
+}
+.modal-actions {
+    display: flex; justify-content: center; gap: 10px;
+    margin-top: 22px; flex-wrap: wrap;
+}
+@keyframes modal-in {
+    from { transform: translateY(8px) scale(.98); opacity: 0; }
+    to { transform: translateY(0) scale(1); opacity: 1; }
+}
+@media (max-width: 560px) {
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; }
+}
+
 /* ---------- Loading / skeleton ---------- */
 .loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 20px; color: var(--text-muted); }
 .spinner {

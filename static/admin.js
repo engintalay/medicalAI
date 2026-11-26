@@ -1114,7 +1114,9 @@
 
     async function deleteHealthMetric(metricId) {
         if (!metricId) return;
-        if (!window.confirm('Bu ölçümü silmek istediğinize emin misiniz?')) return;
+        if (!await MedicalDialog.confirm('Bu ölçümü silmek istediğinize emin misiniz?', {
+            title: 'Ölçümü sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/health/metrics/' + encodeURIComponent(metricId) +
                 '?user_id=' + encodeURIComponent(state.healthUserId), { method: 'DELETE' });
@@ -1933,7 +1935,9 @@
     }
 
     async function deleteResearch(id) {
-        if (!window.confirm('Bu araştırma kaydı silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('Bu araştırma kaydı silinsin mi?', {
+            title: 'Araştırmayı sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/research/' + encodeURIComponent(id), { method: 'DELETE' });
             showToast('Kayıt silindi.', 'success');
@@ -2102,7 +2106,9 @@
     }
 
     async function deleteRagSource(source) {
-        if (!window.confirm('"' + source + '" kaynağına ait tüm public parçalar silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('"' + source + '" kaynağına ait tüm public parçalar silinsin mi?', {
+            title: 'RAG kaynağını sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/rag/documents/' + encodeURIComponent(source), { method: 'DELETE' });
             showToast('RAG kaynağı silindi.', 'success');

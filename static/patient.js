@@ -848,7 +848,9 @@
     }
 
     async function deleteConversation(id) {
-        if (!window.confirm('Bu sohbet ve tüm mesajları kalıcı olarak silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('Bu sohbet ve tüm mesajları kalıcı olarak silinsin mi?', {
+            title: 'Sohbeti sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/api/conversations/' + encodeURIComponent(id), { method: 'DELETE' });
             if (state.chat.activeId === id) newConversation();
@@ -1141,7 +1143,9 @@
     }
 
     async function deleteMetric(metricId) {
-        if (!window.confirm('Bu metrik kaydı silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('Bu metrik kaydı silinsin mi?', {
+            title: 'Metriği sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/api/user/metrics/' + encodeURIComponent(metricId), { method: 'DELETE' });
             showToast('Metrik silindi.', 'success');
@@ -1155,7 +1159,9 @@
     async function deleteSelectedMetrics() {
         const ids = Array.from(state.metrics.selected);
         if (!ids.length) return;
-        if (!window.confirm(ids.length + ' metrik kaydı silinsin mi?')) return;
+        if (!await MedicalDialog.confirm(ids.length + ' metrik kaydı silinsin mi?', {
+            title: 'Seçilen metrikleri sil', confirmText: 'Tümünü sil', cancelText: 'Vazgeç'
+        })) return;
         const button = document.getElementById('deleteSelectedMetricsBtn');
         if (button) button.disabled = true;
         let deleted = 0;
@@ -1244,7 +1250,9 @@
     }
 
     async function deleteUpload(id) {
-        if (!window.confirm('Bu dosya silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('Bu dosya silinsin mi?', {
+            title: 'Dosyayı sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/api/uploads/' + encodeURIComponent(id), { method: 'DELETE' });
             showToast('Dosya silindi.', 'success');
@@ -1359,7 +1367,9 @@
     }
 
     async function deleteReminder(id) {
-        if (!window.confirm('Bu hatırlatma silinsin mi?')) return;
+        if (!await MedicalDialog.confirm('Bu hatırlatma silinsin mi?', {
+            title: 'Hatırlatmayı sil', confirmText: 'Sil', cancelText: 'Vazgeç'
+        })) return;
         try {
             await api('/api/reminders/' + encodeURIComponent(id), { method: 'DELETE' });
             showToast('Hatırlatma silindi.', 'success');
