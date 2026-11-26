@@ -1232,6 +1232,16 @@
             '</div>';
     }
 
+    function numberConfigInput(configs, key, label, min, max, step, hint, placeholder) {
+        const config = configs.get(key) || {};
+        const value = config.value === undefined || config.value === null ? '' : config.value;
+        return '<div class="field"><label class="label" for="cfg-' + esc(key) + '">' + esc(label) + '</label>' +
+            '<input class="input" id="cfg-' + esc(key) + '" type="number" data-config-key="' + esc(key) + '" ' +
+            'data-secret="false" min="' + min + '" max="' + max + '" step="' + (step || 1) + '" ' +
+            'value="' + esc(value) + '" placeholder="' + esc(placeholder || '') + '">' +
+            '<span class="hint">' + esc(hint || '') + '</span></div>';
+    }
+
     async function renderDbConfig() {
         const response = await api('/config?limit=200');
         const configs = new Map((response.data || []).map(function (item) { return [item.key, item]; }));
@@ -1637,6 +1647,11 @@
             '<h2 class="page-title">LLM Ayarları</h2>' +
             '<p class="page-sub">Sağlık verilerini işleyen ana LLM ile görsel okuma için kullanılacak vision LLM\'i yapılandırın.</p>' +
             '</div>' +
+            '<div class="settings-tabs" role="tablist">' +
+            '<button type="button" class="settings-tab active" data-llm-tab="basic" role="tab">Temel</button>' +
+            '<button type="button" class="settings-tab" data-llm-tab="advanced" role="tab">Advanced</button>' +
+            '</div>' +
+            '<div id="llmBasicPanel" class="settings-panel" role="tabpanel">' +
             '<div class="cards-grid">' +
             '<div class="card">' +
             '<div class="card-head"><div class="card-title">Ana LLM · Sağlık</div>' +
@@ -1677,7 +1692,40 @@
             '</div>' +
             llmTestSection('vision') +
             '</div>' +
-            '</div>' +
+            '</div></div>' +
+            '<div id="llmAdvancedPanel" class="settings-panel hidden" role="tabpanel">' +
+            '<div class="cards-grid">' +
+            '<div class="card"><div class="card-head"><div class="card-title">Ana LLM · Gelişmiş</div></div>' +
+            '<div class="form-grid">' +
+            numberConfigInput(configs, 'llm_max_tokens', 'Maksimum cevap tokenı', 16, 4096, 1,
+                'Uzun yanıtlar için artırın; yerel modellerde süre doğrudan uzar.', '256') +
+            numberConfigInput(configs, 'llm_timeout', 'İstek zaman aşımı (sn)', 15, 600, 1,
+                'Yerel 27B modellerde 180 saniye önerilir.', '180') +
+            '</div></div>' +
+            '<div class="card"><div class="card-head"><div class="card-title">Vision LLM · Gelişmiş</div></div>' +
+            '<div class="form-grid">' +
+            numberConfigInput(configs, 'vision_max_tokens', 'Maksimum cevap tokenı', 64, 8192, 1,
+                'Görseldeki metnin uzunluğuna göre ayarlayın.', '1024') +
+            numberConfigInput(configs, 'vision_timeout', 'İstek zaman aşımı (sn)', 30, 600, 1,
+                'Görsel okuma ve PDF analizi süresi.', '180') +
+            '</div></div>' +
+            '<div class="card"><div class="card-head"><div class="card-title">RAG · Gelişmiş</div></div>' +
+            '<div class="form-grid">' +
+            numberConfigInput(configs, 'rag_top_k', 'Getirilecek kaynak sayısı', 1, 50, 1,
+                'Sohbet başına kullanılacak maksimum RAG parçası.', '5') +
+            numberConfigInput(configs, 'rag_chunk_size', 'Parça boyutu', 100, 4000, 1,
+                'Metin parçalama boyutu; PDF/prospektüs için 800 önerilir.', '800') +
+            numberConfigInput(configs, 'rag_overlap', 'Parça örtüşmesi', 0, 1000, 1,
+                'Parça boyutundan küçük olmalı.', '100') +
+            configInput(configs, 'embedding_model', 'Embedding modeli', 'text',
+                'Yerel Sentence-Transformers modeli; değişiklik restart gerektirebilir.') +
+            '</div></div>' +
+            '<div class="card"><div class="card-head"><div class="card-title">Dosya · Gelişmiş</div></div>' +
+            '<div class="form-grid">' +
+            numberConfigInput(configs, 'max_upload_mb', 'Maksimum dosya boyutu (MB)', 1, 200, 1,
+                'Görsel, PDF ve TXT yükleme sınırı.', '20') +
+            '</div></div>' +
+            '</div></div>' +
             '<div class="form-actions">' +
             '<button type="button" class="btn btn-primary" id="saveLlmBtn">Değişiklikleri Kaydet</button>' +
             '</div>' +
@@ -1710,7 +1758,51 @@
         const saveButton = document.getElementById('saveLlmBtn');
         if (saveButton) saveButton.addEventListener('click', saveLlmSettings);
 
+        document.querySelectorAll('[data-llm-tab]').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                const target = tab.getAttribute('data-llm-tab');
+                document.querySelectorAll('[data-llm-tab]').forEach(function (item) {
+                    item.classList.toggle('active', item === tab);
+                });
+                const basic = document.getElementById('llmBasicPanel');
+                const advanced = document.getElementById('llmAdvancedPanel');
+                if (basic) basic.classList.toggle('hidden', target !== 'basic');
+                if (advanced) advanced.classList.toggle('hidden', target !== 'advanced');
+            });
+        });
+
         updateLlmUi();
+    }
+
+    function validateLlmAdvanced() {
+        const rules = [
+            ['llm_max_tokens', 16, 4096, 'Ana LLM token sınırı'],
+            ['llm_timeout', 15, 600, 'Ana LLM timeout'],
+            ['vision_max_tokens', 64, 8192, 'Vision token sınırı'],
+            ['vision_timeout', 30, 600, 'Vision timeout'],
+            ['rag_top_k', 1, 50, 'RAG kaynak sayısı'],
+            ['rag_chunk_size', 100, 4000, 'RAG parça boyutu'],
+            ['rag_overlap', 0, 1000, 'RAG örtüşme'],
+            ['max_upload_mb', 1, 200, 'Dosya boyutu']
+        ];
+        for (const rule of rules) {
+            const input = document.getElementById('cfg-' + rule[0]);
+            if (!input) continue;
+            const value = Number(input.value);
+            if (!Number.isFinite(value) || value < rule[1] || value > rule[2]) {
+                showToast(rule[3] + ' ' + rule[1] + '-' + rule[2] + ' aralığında olmalı.', 'error');
+                input.focus();
+                return false;
+            }
+        }
+        const chunk = Number(document.getElementById('cfg-rag_chunk_size').value);
+        const overlap = Number(document.getElementById('cfg-rag_overlap').value);
+        if (overlap >= chunk) {
+            showToast('RAG örtüşmesi parça boyutundan küçük olmalı.', 'error');
+            document.getElementById('cfg-rag_overlap').focus();
+            return false;
+        }
+        return true;
     }
 
     async function saveLlmSettings() {
@@ -1733,6 +1825,8 @@
                 return;
             }
         }
+
+        if (!validateLlmAdvanced()) return;
 
         const updates = collectConfigUpdates(true).filter(function (pair) {
             return pair[0] !== 'vision_llm_enabled';

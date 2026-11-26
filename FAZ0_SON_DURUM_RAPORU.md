@@ -397,14 +397,15 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 86 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 87 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
   hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler,
   ölçüm tarihi ve sistem giriş zamanının ayrı saklanması, RAG PDF/TXT yükleme,
   prospektus.co ilaç arama ve URL içe aktarma, sohbet arama/arşiv/geri yükleme/silme,
-  dosya önizleme ve kalıcı metin çıkarma sonuçları, ölçüm tarihi çıkarma ve export).
+  dosya önizleme ve kalıcı metin çıkarma sonuçları, ölçüm tarihi çıkarma ve export,
+  LLM Advanced ayar sekmesi).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -419,7 +420,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin` | Dashboard / izleme özeti |
 | `/admin/monitoring` | Sistem izleme |
 | `/admin/config` | Sistem config (hot reload) |
-| `/admin/llm` | LLM ayarları |
+| `/admin/llm` | LLM ayarları: Temel + **Advanced** (token, timeout, RAG ve dosya sınırları) |
 | `/admin/users` | Kullanıcı listesi + **yeni kullanıcı oluşturma** (admin/hasta) + aktif/pasif |
 | `/admin/storage` | Disk kullanımı |
 | `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) |

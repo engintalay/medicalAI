@@ -27,6 +27,15 @@ def test_admin_spa_has_health_link_and_cache_busting(client):
     assert "/static/admin.css?v=" in html
 
 
+def test_llm_advanced_controls_present():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / "static" / "admin.js").read_text(encoding="utf-8")
+    for key in ("llm_max_tokens", "llm_timeout", "vision_max_tokens", "vision_timeout",
+                "rag_top_k", "rag_chunk_size", "rag_overlap", "max_upload_mb"):
+        assert key in text
+    assert 'data-llm-tab="advanced"' in text
+
+
 def test_admin_js_syntax():
     import subprocess
     result = subprocess.run(
