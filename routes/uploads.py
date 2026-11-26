@@ -2,8 +2,11 @@
 #
 # Upload / listeleme / silme. user_id daima JWT'den alınır; istekten alınmaz.
 
+import json
+import logging
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -26,6 +29,11 @@ class JSONResponse(_FastJSONResponse):
 
 router = APIRouter()
 _config = get_config_loader()
+logger = logging.getLogger("uvicorn.error.medicalai.uploads")
+
+
+def _debug(event, **fields):
+    logger.info("[upload-debug] %s %s", event, json.dumps(fields, ensure_ascii=False, default=str))
 
 ALLOWED_TYPES = {
     "application/pdf": {".pdf"},
@@ -116,6 +124,8 @@ async def upload_file(
 ):
     user_id = int(user["user_id"])
     mime = (file.content_type or "").split(";")[0].strip().lower()
+    started = time.monotonic()
+    _debug("upload_start", user_id=user_id, filename=_safe_name(file.filename), mime=mime)
     if mime not in ALLOWED_TYPES:
         return JSONResponse(
             status_code=400,
@@ -175,6 +185,8 @@ async def upload_file(
         if conn:
             conn.close()
 
+    _debug("upload_done", user_id=user_id, upload_id=row[0], bytes=len(data),
+           elapsed=round(time.monotonic() - started, 3))
     return JSONResponse(status_code=200, content={"success": True, "data": _row_to_dict(row)})
 
 
@@ -209,6 +221,8 @@ async def extract_upload_text(
     API anahtarı verilmezse DB'deki ilgili anahtar kullanılır.
     """
     payload = payload or {}
+    started = time.monotonic()
+    _debug("extract_start", upload_id=upload_id, user_id=int(user["user_id"]))
     api_key = payload.get("api_key")
     prompt = payload.get("prompt")
     if api_key is not None:
@@ -224,11 +238,15 @@ async def extract_upload_text(
             prompt=prompt or UPLOAD_EXTRACT_PROMPT,
         )
     except VisionError as exc:
+        _debug("extract_error", upload_id=upload_id, error=str(exc)[:300],
+               elapsed=round(time.monotonic() - started, 3))
         return JSONResponse(
             status_code=exc.status_code,
             content={"success": False, "error": str(exc)},
         )
     _save_extraction(upload_id, int(user["user_id"]), result)
+    _debug("extract_done", upload_id=upload_id, source=result.get("source"),
+           chars=len(str(result.get("text") or "")), elapsed=round(time.monotonic() - started, 3))
     return JSONResponse(status_code=200, content={"success": True, "data": result})
 
 

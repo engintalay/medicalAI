@@ -5,7 +5,9 @@
 
 import asyncio
 import json
+import logging
 import re
+import time
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -23,6 +25,11 @@ from services.measurements import extract_measurement_date, extract_measurements
 
 router = APIRouter()
 _config = get_config_loader()
+logger = logging.getLogger("uvicorn.error.medicalai.chat")
+
+
+def _debug(event, **fields):
+    logger.info("[chat-debug] %s %s", event, json.dumps(fields, ensure_ascii=False, default=str))
 
 GUARDRAIL = "Bu bilgi tanı yerine geçmez; doktorunuza danışın."
 SYSTEM_PROMPT = (
@@ -117,18 +124,27 @@ def _call_llm(messages: list, settings: dict) -> str:
             payload["reasoning_effort"] = "none"
     body = json.dumps(payload).encode("utf-8")
     request = Request(settings["base_url"], data=body, headers=headers, method="POST")
+    started = time.monotonic()
+    _debug("llm_request_start", model=settings["model"], max_tokens=settings["max_tokens"],
+           thinking=settings.get("thinking", False), timeout=settings["timeout"], messages=len(messages))
     try:
         with urlopen(request, timeout=settings["timeout"]) as response:
             raw = response.read(512 * 1024)
+        _debug("llm_response_received", model=settings["model"],
+               elapsed=round(time.monotonic() - started, 3), bytes=len(raw))
     except HTTPError as exc:
         detail = ""
         try:
             detail = _sanitize(exc.read(400).decode("utf-8", errors="replace"), settings["api_key"])
         except Exception:
             pass
+        _debug("llm_http_error", model=settings["model"], status=exc.code,
+               elapsed=round(time.monotonic() - started, 3), detail=detail)
         raise ValueError(f"LLM hatası (HTTP {exc.code}). {detail}".strip())
     except (URLError, TimeoutError) as exc:
         reason = getattr(exc, "reason", exc)
+        _debug("llm_network_error", model=settings["model"],
+               elapsed=round(time.monotonic() - started, 3), reason=str(reason)[:160])
         raise ValueError(f"LLM erişilemedi: {_sanitize(str(reason), settings['api_key'])}")
 
     try:
@@ -154,6 +170,9 @@ def _call_llm(messages: list, settings: dict) -> str:
     content = re.sub(r"<think>.*?</think>", "", str(content), flags=re.S | re.I).strip()
     if not content:
         raise ValueError("LLM boş metin döndürdü.")
+    _debug("llm_parsed", model=settings["model"], chars=len(content),
+           elapsed=round(time.monotonic() - started, 3),
+           used_reasoning=not bool((message.get("content") or "").strip()))
     return content
 
 
@@ -284,6 +303,10 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
         return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
 
     user_id = int(user["user_id"])
+    started = time.monotonic()
+    stage = "start"
+    _debug("chat_start", user_id=user_id, message_chars=len(query),
+           conversation_id=body.conversation_id, upload_id=upload_id, save_metrics=body.save_metrics)
     conn = None
     attachment = None
     recorded_metrics = []
@@ -307,6 +330,8 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
 
         extracted_text = ""
         if upload_id is not None:
+            stage = "vision"
+            _debug("vision_start", upload_id=upload_id)
             try:
                 result = await vision.extract_text(
                     upload_id, user_id, prompt=ATTACHMENT_PROMPT
@@ -333,6 +358,9 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
                 "source": result.get("source"),
                 "model_used": bool(result.get("model_used")),
             }
+            stage = "vision_done"
+            _debug("vision_done", upload_id=upload_id, source=result.get("source"),
+                   chars=len(extracted_text), model_used=bool(result.get("model_used")))
             attachment_block = (
                 f"[YÜKLENEN DOSYA: {filename}]\n{extracted_text[:12000]}"
             )
@@ -347,15 +375,21 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
         except (TypeError, ValueError):
             top_k = 5
         retrieval_query = query or extracted_text[:600]
+        stage = "rag"
+        _debug("rag_start", query_chars=len(retrieval_query), top_k=top_k)
         sources = await asyncio.to_thread(
             rag.search, conn, user_id, retrieval_query, top_k=top_k, threshold=0.25
         )
-
+        stage = "llm"
+        _debug("rag_done", sources=len(sources))
+        _debug("llm_start", model=settings["model"])
         answer = await asyncio.to_thread(
             _call_llm, _build_messages(prompt_query, sources, history), settings
         )
         if GUARDRAIL not in answer:
             answer = answer.rstrip() + "\n\n" + GUARDRAIL
+        stage = "save"
+        _debug("llm_done", model=settings["model"], answer_chars=len(answer))
 
         # LLM başarılıysa mesajları ve doğrulanmış ölçümleri aynı transaction'da kaydet.
         if conversation_id is None:
@@ -371,6 +405,8 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
             recorded_metrics = _save_measurements(conn, user_id, extracted_text)
         _save_messages(conn, conversation_id, stored_query, answer)
         conn.commit()
+        _debug("chat_done", user_id=user_id, conversation_id=conversation_id,
+               recorded_metrics=len(recorded_metrics), elapsed=round(time.monotonic() - started, 3))
 
         return JSONResponse(status_code=200, content={
             "success": True,
@@ -386,14 +422,21 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
             },
         })
     except vision.VisionError as exc:
+        _debug("chat_error", stage=stage, error_type="VisionError", error=str(exc)[:300],
+               elapsed=round(time.monotonic() - started, 3))
         if conn:
             conn.rollback()
         return JSONResponse(status_code=exc.status_code, content={"success": False, "error": str(exc)})
     except ValueError as exc:
+        _debug("chat_error", stage=stage, error_type="ValueError", error=str(exc)[:300],
+               elapsed=round(time.monotonic() - started, 3))
         if conn:
             conn.rollback()
         return JSONResponse(status_code=502, content={"success": False, "error": str(exc)})
     except Exception as exc:
+        _debug("chat_error", stage=stage, error_type=type(exc).__name__,
+               error=_sanitize(str(exc), settings['api_key'])[:300],
+               elapsed=round(time.monotonic() - started, 3))
         if conn:
             conn.rollback()
         return JSONResponse(

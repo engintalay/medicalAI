@@ -369,6 +369,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   (şema+veri, FK sıralı geri yükleme); 175 satırlık yedek geçici şemada doğrulandı.
 - Restore sonrası `GET /health` 200 dönmelidir.
 - Loglara istek gövdesi, Bearer token veya API anahtarı yazılmaz.
+- `logs/app.log` içinde `[upload-debug]`, `[vision-debug]` ve `[chat-debug]` aşama
+  logları bulunur; model, süre, byte/karakter sayısı ve hata kodu yazılır, içerik yazılmaz.
 
 ## 5. Tıbbi güvenlik
 
@@ -494,6 +496,7 @@ POST /api/uploads/{id}/extract 200 → listede extracted_text/extracted_at kalı
 IMG_20261126_193136.jpg doğru okundu: 22/11 · 117/75 mmHg · 81 bpm
 CSV export 200: ölçüm tarihi 2026-11-22 ve dosya analiz metni birlikte yer alıyor
 Gemma-4 thinking=false + tek system mesajı → boş metin hatası olmadan yanıt 200
+Debug akışı: upload 0.05s → vision 19.0s → RAG → LLM 18.9s → chat_done 43.3s
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.
 

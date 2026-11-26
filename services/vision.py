@@ -7,7 +7,9 @@
 import asyncio
 import base64
 import json
+import logging
 import re
+import time
 import zlib
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -19,6 +21,11 @@ import psycopg2
 from config.loader import get_config_loader
 
 _config = get_config_loader()
+logger = logging.getLogger("uvicorn.error.medicalai.vision")
+
+
+def _debug(event, **fields):
+    logger.info("[vision-debug] %s %s", event, json.dumps(fields, ensure_ascii=False, default=str))
 
 PROVIDER_DEFAULTS = {
     "openai": "https://api.openai.com/v1",
@@ -192,8 +199,11 @@ def _parse_reply(payload) -> str:
     if not content:
         content = first.get("text") or message.get("reasoning_content") or first.get("reasoning_content")
     if not isinstance(content, str) or not content.strip():
+        _debug("empty_content", choices=len(choices))
         raise VisionError("LLM boş metin döndürdü.", 502)
-    return re.sub(r"<think>.*?</think>", "", content, flags=re.S | re.I).strip()
+    cleaned = re.sub(r"<think>.*?</think>", "", content, flags=re.S | re.I).strip()
+    _debug("parsed", content_chars=len(cleaned), used_reasoning=not bool((message.get("content") or "").strip()))
+    return cleaned
 
 
 def _sanitize_detail(raw: bytes, api_key: str) -> str:
@@ -258,21 +268,30 @@ def _call_completions(
         headers=headers,
         method="POST",
     )
+    started = time.monotonic()
+    _debug("request_start", provider=provider, model=model, max_tokens=payload["max_tokens"],
+           thinking=thinking, timeout=max(30, min(timeout, 600)))
     try:
         with urlopen(request, timeout=max(30, min(timeout, 600))) as response:
             raw = response.read(8 * 1024 * 1024)
+        _debug("response_received", provider=provider, model=model,
+               elapsed=round(time.monotonic() - started, 3), bytes=len(raw))
     except HTTPError as exc:
         detail = ""
         try:
             detail = _sanitize_detail(exc.read(400), api_key)
         except Exception:
             pass
+        _debug("http_error", provider=provider, model=model, status=exc.code,
+               elapsed=round(time.monotonic() - started, 3), detail=detail)
         message = f"Görsel okuma başarısız (HTTP {exc.code})."
         if detail:
             message += " Sunucu: " + detail
         raise VisionError(message, 502)
     except (URLError, TimeoutError) as exc:
         reason = getattr(exc, "reason", exc)
+        _debug("network_error", provider=provider, model=model,
+               elapsed=round(time.monotonic() - started, 3), reason=str(reason)[:160])
         raise VisionError("Vision LLM'e ulaşılamadı: " + str(reason)[:160], 502)
 
     try:
@@ -314,6 +333,8 @@ def extract_text_from_data(
     api_key: str | None = None,
 ) -> dict:
     """Dosya baytlarından metin çıkarır; DB/user_uploads bağımlılığı yoktur."""
+    started = time.monotonic()
+    _debug("extract_start", mime=mime, bytes=len(data), prompt_chars=len(prompt or DEFAULT_PROMPT))
     settings = _resolve_config(api_key)
     mime = (mime or "").split(";")[0].strip().lower()
     if mime == "text/plain":
@@ -386,4 +407,8 @@ async def extract_text(
 
     api_key kaydedilmeden kullanılabilir; boşsa DB'deki ilgili anahtar kullanılır.
     """
-    return await asyncio.to_thread(_extract_sync, upload_id, user_id, api_key, prompt)
+    started = time.monotonic()
+    result = await asyncio.to_thread(_extract_sync, upload_id, user_id, api_key, prompt)
+    _debug("extract_done", upload_id=upload_id, source=result.get("source"),
+           chars=len(str(result.get("text") or "")), elapsed=round(time.monotonic() - started, 3))
+    return result
