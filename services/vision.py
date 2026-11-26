@@ -178,7 +178,8 @@ def _parse_reply(payload) -> str:
         raise VisionError("LLM metin döndürmedi.", 502)
 
     first = choices[0] if isinstance(choices[0], dict) else {}
-    content = (first.get("message") or {}).get("content")
+    message = first.get("message") or {}
+    content = message.get("content")
     if isinstance(content, list):
         parts = []
         for part in content:
@@ -188,11 +189,10 @@ def _parse_reply(payload) -> str:
                 parts.append(str(part["text"]))
         content = "\n".join(parts)
     if not content:
-        content = first.get("text")
-
+        content = first.get("text") or message.get("reasoning_content") or first.get("reasoning_content")
     if not isinstance(content, str) or not content.strip():
         raise VisionError("LLM boş metin döndürdü.", 502)
-    return content.strip()
+    return re.sub(r"<think>.*?</think>", "", content, flags=re.S | re.I).strip()
 
 
 def _sanitize_detail(raw: bytes, api_key: str) -> str:
@@ -210,6 +210,7 @@ def _call_completions(
     model: str,
     data_url: str,
     prompt: str,
+    thinking: bool = False,
 ) -> str:
     endpoint_base = base_url
     if provider == "ollama" and not endpoint_base.endswith("/v1"):
@@ -224,7 +225,7 @@ def _call_completions(
         timeout = float(_config.get("vision_timeout", "180") or 180)
     except (TypeError, ValueError):
         timeout = 180
-    body = {
+    payload = {
         "model": model,
         "temperature": 0,
         "max_tokens": max(64, min(max_tokens, 8192)),
@@ -239,6 +240,12 @@ def _call_completions(
             },
         ],
     }
+    if not thinking:
+        if provider in ("custom", "ollama"):
+            payload["reasoning_effort"] = "none"
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        elif provider == "openai":
+            payload["reasoning_effort"] = "none"
     headers = dict(HTTP_HEADERS)
     headers["Content-Type"] = "application/json"
     if api_key and provider != "ollama":
@@ -246,7 +253,7 @@ def _call_completions(
 
     request = Request(
         url,
-        data=json.dumps(body).encode("utf-8"),
+        data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
     )
@@ -287,6 +294,7 @@ def _resolve_config(api_key: str | None):
             "api_key": api_key or (_config.get("llm_api_key", "") or ""),
             "base_url": (_config.get("llm_base_url", "") or ""),
             "source": "primary_llm",
+            "thinking": _flag("llm_thinking"),
         }
     return {
         "provider": (_config.get("vision_llm_provider", "openai") or "openai"),
@@ -294,6 +302,7 @@ def _resolve_config(api_key: str | None):
         "api_key": api_key or (_config.get("vision_llm_api_key", "") or ""),
         "base_url": (_config.get("vision_llm_base_url", "") or ""),
         "source": "vision_llm",
+        "thinking": _flag("vision_thinking"),
     }
 
 
@@ -341,6 +350,7 @@ def extract_text_from_data(
         model,
         data_url,
         prompt or DEFAULT_PROMPT,
+        thinking=settings.get("thinking", False),
     )
     return {
         "text": text,

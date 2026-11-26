@@ -379,6 +379,10 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   medgemma gibi rol sırasını zorunlu kılan Jinja şablonlarıyla uyumluluk sağlanır.
 - `/admin/config` üzerinden `llm_max_tokens` (varsayılan 256) ve `llm_timeout`
   (varsayılan 180 saniye) ayarlanabilir; yerel 27B modellerin cevap süresi buna göre belirlenir.
+- `llm_thinking` / `vision_thinking` kapalıyken llama.cpp/Gemma isteklerine
+  `reasoning_effort=none` ve `chat_template_kwargs.enable_thinking=false` gönderilir.
+  Sunucu yine de yalnızca `reasoning_content` döndürürse boş metin hatası yerine
+  bu içerik yanıt olarak kullanılır.
 - Vision için `vision_max_tokens` (1024) ve `vision_timeout` (180 saniye) ayrıca ayarlanabilir.
 - Tansiyon görselleri etiket bazlı promptla okunur; `gg/aa` ölçüm tarihi çıkarılıp
   metriklerin `recorded_at` alanına işlenir. CSV/PDF export'una dosya analiz metni eklenir.
@@ -397,7 +401,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 87 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 88 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -405,7 +409,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   ölçüm tarihi ve sistem giriş zamanının ayrı saklanması, RAG PDF/TXT yükleme,
   prospektus.co ilaç arama ve URL içe aktarma, sohbet arama/arşiv/geri yükleme/silme,
   dosya önizleme ve kalıcı metin çıkarma sonuçları, ölçüm tarihi çıkarma ve export,
-  LLM Advanced ayar sekmesi).
+  LLM Advanced ayar sekmesi, thinking kapalı ve reasoning yanıtı yedeklemesi).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -486,6 +490,7 @@ POST /api/uploads/{id}/extract 200 → listede extracted_text/extracted_at kalı
 İki dosya seçili silme API akışı 200 → kalan dosya 0
 IMG_20261126_193136.jpg doğru okundu: 22/11 · 117/75 mmHg · 81 bpm
 CSV export 200: ölçüm tarihi 2026-11-22 ve dosya analiz metni birlikte yer alıyor
+Gemma-4 thinking=false + tek system mesajı → boş metin hatası olmadan yanıt 200
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.
 

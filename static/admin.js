@@ -1701,6 +1701,10 @@
                 'Uzun yanıtlar için artırın; yerel modellerde süre doğrudan uzar.', '256') +
             numberConfigInput(configs, 'llm_timeout', 'İstek zaman aşımı (sn)', 15, 600, 1,
                 'Yerel 27B modellerde 180 saniye önerilir.', '180') +
+            '</div>' +
+            checkboxInput(configs, 'llm_thinking', 'llm-thinking',
+                'Thinking / reasoning açık',
+                'Kapalıyken Gemma/llama.cpp isteklerine enable_thinking=false ve reasoning_effort=none gönderilir.') +
             '</div></div>' +
             '<div class="card"><div class="card-head"><div class="card-title">Vision LLM · Gelişmiş</div></div>' +
             '<div class="form-grid">' +
@@ -1708,6 +1712,10 @@
                 'Görseldeki metnin uzunluğuna göre ayarlayın.', '1024') +
             numberConfigInput(configs, 'vision_timeout', 'İstek zaman aşımı (sn)', 30, 600, 1,
                 'Görsel okuma ve PDF analizi süresi.', '180') +
+            '</div>' +
+            checkboxInput(configs, 'vision_thinking', 'vision-thinking',
+                'Thinking / reasoning açık',
+                'Görsel okumada reasoning kapatılır; böylece boş content gelmesi önlenir.') +
             '</div></div>' +
             '<div class="card"><div class="card-head"><div class="card-title">RAG · Gelişmiş</div></div>' +
             '<div class="form-grid">' +

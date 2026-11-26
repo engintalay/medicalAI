@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -86,11 +87,13 @@ def _llm_settings() -> dict:
         timeout = float(_config.get("llm_timeout", "180") or 180)
     except (TypeError, ValueError):
         timeout = 180
+    thinking = str(_config.get("llm_thinking", "false") or "false").strip().lower() == "true"
     return {
         "provider": provider, "model": model, "api_key": api_key,
         "base_url": base_url + "/chat/completions",
         "max_tokens": max(16, min(max_tokens, 4096)),
         "timeout": max(15, min(timeout, 600)),
+        "thinking": thinking,
     }
 
 
@@ -100,12 +103,19 @@ def _call_llm(messages: list, settings: dict) -> str:
     headers["Content-Type"] = "application/json"
     if settings["api_key"] and settings["provider"] != "ollama":
         headers["Authorization"] = "Bearer " + settings["api_key"]
-    body = json.dumps({
+    payload = {
         "model": settings["model"],
         "temperature": 0.2,
         "max_tokens": settings["max_tokens"],
         "messages": messages,
-    }).encode("utf-8")
+    }
+    if not settings.get("thinking", False):
+        if settings["provider"] in ("custom", "ollama"):
+            payload["reasoning_effort"] = "none"
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        elif settings["provider"] == "openai":
+            payload["reasoning_effort"] = "none"
+    body = json.dumps(payload).encode("utf-8")
     request = Request(settings["base_url"], data=body, headers=headers, method="POST")
     try:
         with urlopen(request, timeout=settings["timeout"]) as response:
@@ -132,16 +142,19 @@ def _call_llm(messages: list, settings: dict) -> str:
     if not choices or not isinstance(choices, list):
         raise ValueError("LLM boş yanıt döndürdü.")
     first = choices[0] if isinstance(choices[0], dict) else {}
-    content = (first.get("message") or {}).get("content") or first.get("text") or ""
+    message = first.get("message") or {}
+    content = message.get("content") or first.get("text") or ""
+    if not content:
+        content = message.get("reasoning_content") or first.get("reasoning_content") or ""
     if isinstance(content, list):
         content = "\n".join(
             str(part.get("text") or "") if isinstance(part, dict) else str(part)
             for part in content
         )
-    answer = str(content).strip()
-    if not answer:
-        raise ValueError("LLM boş yanıt döndürdü.")
-    return answer
+    content = re.sub(r"<think>.*?</think>", "", str(content), flags=re.S | re.I).strip()
+    if not content:
+        raise ValueError("LLM boş metin döndürdü.")
+    return content
 
 
 def _build_messages(query: str, sources: list, history: list) -> list:

@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import re
 import struct
 import time
 import zlib
@@ -250,10 +251,10 @@ async def update_config(request: Request, key: str, value: str = None):
         'db_host', 'db_port', 'db_name', 'db_user', 'db_password',
         'redis_host', 'redis_port', 'redis_password', 'redis_username',
         'llm_api_key', 'llm_model', 'llm_provider', 'llm_base_url',
-        'llm_max_tokens', 'llm_timeout',
+        'llm_max_tokens', 'llm_timeout', 'llm_thinking',
         'llm_vision_supported', 'vision_llm_enabled',
         'vision_llm_provider', 'vision_llm_model', 'vision_llm_api_key', 'vision_llm_base_url',
-        'vision_max_tokens', 'vision_timeout',
+        'vision_max_tokens', 'vision_timeout', 'vision_thinking',
         'embedding_model', 'rag_top_k', 'rag_chunk_size', 'rag_overlap',
         'upload_dir', 'max_upload_mb', 'admin_default_password', 'jwt_secret',
     }
@@ -482,7 +483,8 @@ def _test_image_data_url() -> str:
 
 
 def _chat_completion_probe(
-    provider: str, base_url: str, api_key: str, model: str, image_url: str | None = None
+    provider: str, base_url: str, api_key: str, model: str, image_url: str | None = None,
+    thinking: bool = False,
 ) -> dict:
     """LLM'e ping (veya görsel) gönderir; cevap süresini ve metni döner."""
     endpoint_base = base_url
@@ -497,13 +499,19 @@ def _chat_completion_probe(
     else:
         user_content = 'Ping. Lütfen sadece "pong" yazın.'
 
-    body = {
+    payload = {
         'model': model,
         'temperature': 0,
         # Yerel 27B modellerde 256 token dakikalar sürebilir; ping için 64 yeterli.
         'max_tokens': 64,
         'messages': [{'role': 'user', 'content': user_content}],
     }
+    if not thinking:
+        if provider in ('custom', 'ollama'):
+            payload['reasoning_effort'] = 'none'
+            payload['chat_template_kwargs'] = {'enable_thinking': False}
+        elif provider == 'openai':
+            payload['reasoning_effort'] = 'none'
     headers = dict(LLM_HTTP_HEADERS)
     headers['Content-Type'] = 'application/json'
     if api_key and provider != 'ollama':
@@ -511,7 +519,7 @@ def _chat_completion_probe(
 
     request = UrlRequest(
         endpoint_base + '/chat/completions',
-        data=json.dumps(body).encode('utf-8'),
+        data=json.dumps(payload).encode('utf-8'),
         headers=headers,
         method='POST',
     )
@@ -552,13 +560,16 @@ def _chat_completion_probe(
         raise ValueError('LLM boş yanıt döndürdü.')
 
     first = choices[0] if isinstance(choices[0], dict) else {}
-    content = (first.get('message') or {}).get('content') or first.get('text') or ''
+    message = first.get('message') or {}
+    content = message.get('content') or first.get('text') or ''
+    if not content:
+        content = message.get('reasoning_content') or first.get('reasoning_content') or ''
     if isinstance(content, list):
         content = '\n'.join(
             str(part.get('text') or '') if isinstance(part, dict) else str(part)
             for part in content
         )
-    reply = str(content).strip()[:200]
+    reply = re.sub(r'<think>.*?</think>', '', str(content), flags=re.S | re.I).strip()[:200]
     if not reply:
         raise ValueError('LLM boş metin döndürdü.')
 
@@ -616,6 +627,7 @@ def _prepare_llm_test(body):
     return {
         'scope': scope, 'provider': provider, 'base_url': resolved,
         'api_key': api_key, 'model': model,
+        'thinking': str(_config.get('llm_thinking' if scope == 'primary' else 'vision_thinking', 'false') or 'false').lower() == 'true',
     }, None
 
 
@@ -624,7 +636,7 @@ async def _run_llm_probe(params: dict, image_url: str | None = None) -> JSONResp
         result = await asyncio.to_thread(
             _chat_completion_probe,
             params['provider'], params['base_url'], params['api_key'], params['model'],
-            image_url,
+            image_url, params.get('thinking', False),
         )
     except ValueError as exc:
         return JSONResponse(status_code=502, content={

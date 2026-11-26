@@ -42,7 +42,7 @@ Bootstrap sırasında `ENV` / `.env` kullanılır; çalışma zamanında
 Önemli anahtarlar:
 
 - `llm_provider`, `llm_base_url`, `llm_model`, `llm_api_key`
-- `llm_max_tokens`, `llm_timeout` (Admin → LLM Ayarları → Advanced)
+- `llm_max_tokens`, `llm_timeout`, `llm_thinking` (Admin → LLM Ayarları → Advanced)
 - `vision_llm_*`, `vision_max_tokens`, `vision_timeout`
 - `embedding_model`, `rag_top_k`, `rag_chunk_size`, `rag_overlap`
 - `db_*`, `redis_*`, `max_upload_mb`, `upload_dir`

@@ -1,5 +1,6 @@
 """07 — RAG retrieval + /api/chat + çok turlu sohbet."""
 
+import json
 import threading
 import time
 import uuid
@@ -104,6 +105,36 @@ def test_conversation_search_matches_message_content(client, patient_headers, fa
     ids = [item["id"] for item in response.json()["data"]]
     assert cid in ids
     assert len(ids) == 1
+
+
+def test_thinking_disabled_request_and_reasoning_fallback(monkeypatch):
+    from routes.chat import _call_llm
+
+    captured = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self, size):
+            return json.dumps({"choices": [{"message": {
+                "role": "assistant", "content": "", "reasoning_content": "Son yanıt"
+            }}]}).encode()
+
+    def fake_open(request, timeout):
+        captured["payload"] = json.loads(request.data)
+        return Response()
+
+    monkeypatch.setattr("routes.chat.urlopen", fake_open)
+    settings = {
+        "provider": "custom", "model": "gemma-4", "api_key": "x",
+        "base_url": "http://localhost/v1/chat/completions",
+        "max_tokens": 256, "timeout": 180, "thinking": False,
+    }
+    assert _call_llm([{"role": "user", "content": "Merhaba"}], settings) == "Son yanıt"
+    assert captured["payload"]["reasoning_effort"] == "none"
+    assert captured["payload"]["chat_template_kwargs"]["enable_thinking"] is False
 
 
 def test_slow_llm_does_not_block_other_requests(client, patient_headers, monkeypatch):
