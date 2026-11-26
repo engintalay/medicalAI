@@ -54,6 +54,13 @@
             date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
     }
 
+    function localDateTimeInputValue(value) {
+        const date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) return '';
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
+    }
+
     function formatNumber(value, digits) {
         if (value === null || value === undefined || value === '') return '—';
         const number = Number(value);
@@ -946,6 +953,9 @@
             '<input class="input" id="metricValue" type="number" step="0.01" placeholder="72.5" required></div>' +
             '<div class="field"><label class="label" for="metricUnit">Birim</label>' +
             '<input class="input" id="metricUnit" placeholder="kg, bpm, %" ></div>' +
+            '<div class="field"><label class="label" for="metricRecordedAt">Ölçüm tarihi</label>' +
+            '<input class="input" id="metricRecordedAt" type="datetime-local" value="' +
+            localDateTimeInputValue() + '"></div>' +
             '<div class="field field-action"><button type="submit" class="btn btn-primary" id="healthSubmitBtn">Ekle</button></div>' +
             '</form>' +
             '</div>' +
@@ -1021,7 +1031,8 @@
 
         const rows = metrics.map(function (metric) {
             return '<tr>' +
-                '<td>' + formatDateTime(metric.recorded_at) + '</td>' +
+                '<td><strong>' + formatDateTime(metric.recorded_at) + '</strong></td>' +
+                '<td class="muted-cell">' + formatDateTime(metric.created_at) + '</td>' +
                 '<td><span class="badge badge-info">' + esc(metric.metric_name) + '</span></td>' +
                 '<td class="mono">' + formatNumber(metric.value) + '</td>' +
                 '<td>' + esc(metric.unit || '—') + '</td>' +
@@ -1032,8 +1043,8 @@
 
         container.innerHTML =
             '<div class="table-wrap"><table class="table">' +
-            '<thead><tr><th>Kayıt Zamanı</th><th>Metrik</th><th>Değer</th><th>Birim</th><th></th></tr></thead>' +
-            '<tbody>' + (rows || '<tr><td colspan="5" class="empty">Bu kullanıcı için ölçüm bulunamadı.</td></tr>') +
+            '<thead><tr><th>Ölçüm Zamanı</th><th>Giriş Zamanı</th><th>Metrik</th><th>Değer</th><th>Birim</th><th></th></tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="6" class="empty">Bu kullanıcı için ölçüm bulunamadı.</td></tr>') +
             '</tbody></table></div>';
     }
 
@@ -1042,6 +1053,7 @@
         const nameInput = document.getElementById('metricName');
         const valueInput = document.getElementById('metricValue');
         const unitInput = document.getElementById('metricUnit');
+        const recordedAtInput = document.getElementById('metricRecordedAt');
         const submit = document.getElementById('healthSubmitBtn');
 
         const metricName = nameInput.value.trim();
@@ -1066,7 +1078,9 @@
                 body: {
                     metric_name: metricName,
                     value: value,
-                    unit: unit || null
+                    unit: unit || null,
+                    recorded_at: recordedAtInput && recordedAtInput.value
+                        ? new Date(recordedAtInput.value).toISOString() : null
                 }
             });
             showToast('Ölçüm eklendi.', 'success');

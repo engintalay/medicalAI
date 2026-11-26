@@ -1538,10 +1538,10 @@
             "metrics"
           ]
         },
-        "description": "Sağlık Metriği Ekle",
+        "description": "Hasta: ölçüm tarihiyle sağlık metriği ekle",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"name\": \"weight\",\n  \"value\": 72.5,\n  \"unit\": \"kg\"\n}",
+          "raw": "{\n  \"name\": \"weight\",\n  \"value\": 72.5,\n  \"unit\": \"kg\",\n  \"recorded_at\": \"2026-11-26T14:30:00+03:00\"\n}",
           "options": {
             "raw": {
               "language": "json"

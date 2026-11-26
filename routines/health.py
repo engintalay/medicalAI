@@ -85,7 +85,7 @@ def get_health_metrics(
         total = cur.fetchone()['count']
 
     # Veriler için parametrik LIMIT/OFFSET (SQL injection riski yok)
-    metrics_query = "SELECT metric_id, user_id, metric_name, value, unit, recorded_at " \
+    metrics_query = "SELECT metric_id, user_id, metric_name, value, unit, recorded_at, created_at " \
                     "FROM health_metrics " \
                     "WHERE user_id = %s"
     if metric_name:
@@ -115,7 +115,7 @@ def get_health_metric_by_id(
     """
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            SELECT metric_id, user_id, metric_name, value, unit, recorded_at
+            SELECT metric_id, user_id, metric_name, value, unit, recorded_at, created_at
             FROM health_metrics
             WHERE metric_id = %s AND user_id = %s
         """, (metric_id, user_id))

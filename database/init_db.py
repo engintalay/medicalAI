@@ -95,8 +95,13 @@ def main() -> int:
             metric_name VARCHAR(50) NOT NULL,
             value DECIMAL(5, 2) NOT NULL,
             unit VARCHAR(20),
-            recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+    """)
+    cur.execute("""
+        ALTER TABLE health_metrics
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     """)
 
     cur.execute("""

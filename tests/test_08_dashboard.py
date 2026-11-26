@@ -1,6 +1,7 @@
 """08 — Hasta dashboard, metrik yazma ve CSV/PDF export."""
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 
 def test_dashboard_shape(client, patient_headers):
@@ -33,6 +34,26 @@ def test_export_formats_and_isolation(client, patient):
 
     assert client.get("/api/user/export?format=xyz", headers=patient["headers"]).status_code == 400
     assert client.get("/api/user/dashboard").status_code == 401
+
+
+def test_metric_measurement_date_and_future_rejection(client, patient_headers):
+    measured_at = datetime(2024, 2, 3, 10, 11, 12, tzinfo=timezone.utc)
+    marker = "dated-" + uuid.uuid4().hex[:8]
+    created = client.post("/api/user/metrics", headers=patient_headers, json={
+        "name": marker, "value": 42, "unit": "test",
+        "recorded_at": measured_at.isoformat(),
+    })
+    assert created.status_code == 201, created.text
+    dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+    item = next(row for row in dashboard["metrics"] if row["name"] == marker)
+    assert datetime.fromisoformat(item["date"].replace("Z", "+00:00")) == measured_at
+    assert item["created_at"] is not None
+
+    future = client.post("/api/user/metrics", headers=patient_headers, json={
+        "name": "future", "value": 1,
+        "recorded_at": (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+    })
+    assert future.status_code == 400
 
 
 def test_metric_delete_and_ownership(client, patient_headers, cfg):

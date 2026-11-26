@@ -4,7 +4,7 @@
 
 import csv
 import io
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -29,6 +29,7 @@ class MetricRequest(BaseModel):
     name: str
     value: float
     unit: str | None = None
+    recorded_at: datetime | None = None
 
 
 def _json_value(value):
@@ -74,7 +75,7 @@ def _weight_trend(conn, user_id: int) -> list:
 def _metric_history(conn, user_id: int) -> list:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT metric_id, metric_name, value, unit, recorded_at FROM health_metrics "
+            "SELECT metric_id, metric_name, value, unit, recorded_at, created_at FROM health_metrics "
             "WHERE user_id = %s ORDER BY recorded_at DESC LIMIT 200",
             (user_id,),
         )
@@ -86,6 +87,7 @@ def _metric_history(conn, user_id: int) -> list:
             "value": _json_value(r[2]),
             "unit": r[3] or "",
             "date": _json_value(r[4]),
+            "created_at": _json_value(r[5]),
         }
         for r in rows
     ]
@@ -155,14 +157,21 @@ async def patient_dashboard(user: dict = Depends(require_patient)):
 async def add_metric(body: MetricRequest, user: dict = Depends(require_patient)):
     if not (body.name or "").strip():
         return JSONResponse(status_code=400, content={"success": False, "error": "Metrik adı boş olamaz."})
+    recorded_at = body.recorded_at or datetime.now(timezone.utc)
+    if recorded_at.tzinfo is None:
+        recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+    if recorded_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+        return JSONResponse(status_code=400, content={
+            "success": False, "error": "Ölçüm tarihi gelecek olamaz."
+        })
     conn = None
     try:
         conn = _config.connect_db()
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO health_metrics (user_id, metric_name, value, unit) "
-                "VALUES (%s, %s, %s, %s) RETURNING metric_id",
-                (int(user["user_id"]), body.name.strip(), body.value, body.unit),
+                "INSERT INTO health_metrics (user_id, metric_name, value, unit, recorded_at) "
+                "VALUES (%s, %s, %s, %s, %s) RETURNING metric_id",
+                (int(user["user_id"]), body.name.strip(), body.value, body.unit, recorded_at),
             )
             metric_id = cur.fetchone()[0]
         conn.commit()

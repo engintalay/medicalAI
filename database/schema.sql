@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS health_metrics (
     metric_name VARCHAR(50) NOT NULL, -- örn: 'weight', 'height'
     value DECIMAL(5, 2) NOT NULL,
     unit VARCHAR(20), -- örn: 'kg', 'cm'
-    recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP -- Sisteme giriş zamanı
 );
 
 -- ---------------------------------------------------------

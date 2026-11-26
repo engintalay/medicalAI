@@ -33,6 +33,7 @@ class HealthMetric(BaseModel):
     value: float
     unit: str
     recorded_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -57,7 +58,8 @@ def format_metric_response(metric_data) -> HealthMetric:
         metric_name=metric_data['metric_name'],
         value=float(metric_data['value']),
         unit=metric_data['unit'],
-        recorded_at=metric_data['recorded_at']
+        recorded_at=metric_data['recorded_at'],
+        created_at=metric_data.get('created_at')
     )
 
 

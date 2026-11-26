@@ -23,6 +23,7 @@
         page: 'dashboard',
         authMode: 'login',
         chat: { conversations: [], activeId: null, messages: [], upload: null },
+        metrics: { items: [], query: '', category: '', selected: new Set() },
         toastTimer: null
     };
 
@@ -50,6 +51,13 @@
         if (Number.isNaN(date.getTime())) return '—';
         return date.toLocaleDateString('tr-TR') + ' ' +
             date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function localDateTimeInputValue(value) {
+        const date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) return '';
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
     }
 
     function formatNumber(value, digits) {
@@ -395,6 +403,30 @@
             const metricDelete = event.target.closest('[data-metric-delete]');
             if (metricDelete) {
                 deleteMetric(Number(metricDelete.getAttribute('data-metric-delete')));
+                return;
+            }
+
+            const metricCheck = event.target.closest('[data-metric-select]');
+            if (metricCheck) {
+                const id = Number(metricCheck.getAttribute('data-metric-select'));
+                if (metricCheck.checked) state.metrics.selected.add(id);
+                else state.metrics.selected.delete(id);
+                renderMetricsTable();
+                return;
+            }
+
+            if (event.target.closest('#metricsSelectAll')) {
+                const checked = document.getElementById('metricsSelectAll').checked;
+                filteredMetrics().forEach(function (item) {
+                    if (checked) state.metrics.selected.add(item.id);
+                    else state.metrics.selected.delete(item.id);
+                });
+                renderMetricsTable();
+                return;
+            }
+
+            if (event.target.closest('#deleteSelectedMetricsBtn')) {
+                deleteSelectedMetrics();
                 return;
             }
 
@@ -859,21 +891,48 @@
     /* Sağlık metrikleri                                                  */
     /* ------------------------------------------------------------------ */
 
+    function metricCategory(name) {
+        const value = String(name || '').toLocaleLowerCase('tr');
+        if (value.includes('sistolik') || value.includes('diyastolik') ||
+            value.includes('tansiyon') || value.includes('blood_pressure')) return 'blood_pressure';
+        if (value.includes('nabız') || value.includes('pulse') || value.includes('heart_rate')) return 'pulse';
+        if (value.includes('weight') || value.includes('kilo')) return 'weight';
+        if (value.includes('glucose') || value.includes('glukoz') || value.includes('kan şekeri')) return 'glucose';
+        if (value.includes('temperature') || value.includes('sıcaklık')) return 'temperature';
+        if (value.includes('spo2') || value.includes('oxygen')) return 'spo2';
+        return 'other';
+    }
+
+    function metricCategoryLabel(key) {
+        const labels = {
+            blood_pressure: 'Tansiyon', pulse: 'Nabız', weight: 'Kilo',
+            glucose: 'Kan Şekeri', temperature: 'Sıcaklık', spo2: 'Oksijen', other: 'Diğer'
+        };
+        return labels[key] || key;
+    }
+
+    function filteredMetrics() {
+        const query = state.metrics.query.trim().toLocaleLowerCase('tr');
+        return state.metrics.items.filter(function (item) {
+            if (state.metrics.category && metricCategory(item.name) !== state.metrics.category) return false;
+            if (!query) return true;
+            const haystack = [item.name, item.unit, item.value,
+                metricCategoryLabel(metricCategory(item.name))]
+                .join(' ').toLocaleLowerCase('tr');
+            return haystack.includes(query);
+        });
+    }
+
     async function renderMetrics() {
         const response = await api('/api/user/dashboard');
-        const items = (response.data && response.data.metrics) || [];
-        const rows = items.length ? items.map(function (item) {
-            return '<tr><td>' + esc(item.name) + '</td>' +
-                '<td>' + esc(formatNumber(item.value, 2)) + '</td>' +
-                '<td>' + esc(item.unit || '—') + '</td>' +
-                '<td>' + formatDateTime(item.date) + '</td>' +
-                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
-                'data-metric-delete="' + item.id + '">Sil</button></td></tr>';
-        }).join('') : '<tr><td colspan="5" class="empty">Henüz metrik kaydı yok.</td></tr>';
+        state.metrics.items = (response.data && response.data.metrics) || [];
+        state.metrics.query = '';
+        state.metrics.category = '';
+        state.metrics.selected = new Set();
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Metriklerim</h2>' +
-            '<p class="page-sub">Kilo, tansiyon, nabız gibi ölçümlerinizi kaydedin.</p></div>' +
+            '<p class="page-sub">Ölçüm tarihini gir; sistem giriş zamanından bağımsız olarak ölçüm tarihine göre sıralanır.</p></div>' +
             '<form class="card" data-form="metric" id="metricForm">' +
             '<div class="form-grid">' +
             '<div class="field"><label class="label" for="metricName">Metrik adı</label>' +
@@ -882,20 +941,93 @@
             '<input class="input" id="metricValue" name="value" type="number" step="any" required></div>' +
             '<div class="field"><label class="label" for="metricUnit">Birim</label>' +
             '<input class="input" id="metricUnit" name="unit" placeholder="Örn. kg, mmHg"></div>' +
+            '<div class="field"><label class="label" for="metricRecordedAt">Ölçüm tarihi ve saati</label>' +
+            '<input class="input" id="metricRecordedAt" name="recorded_at" type="datetime-local" required ' +
+            'value="' + localDateTimeInputValue() + '"></div>' +
             '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Kaydet</button></div>' +
             '</form>' +
             '<div class="section-head"><div class="section-title">Geçmiş</div>' +
-            '<span class="hint">' + formatNumber(items.length) + ' kayıt</span></div>' +
-            '<div class="table-wrap"><table class="table"><thead><tr>' +
-            '<th>Metrik</th><th>Değer</th><th>Birim</th><th>Tarih</th><th></th>' +
+            '<span class="hint" id="metricsCount"></span></div>' +
+            '<div class="toolbar">' +
+            '<div class="toolbar-group">' +
+            '<input type="search" class="input" id="metricSearch" placeholder="Metrik, değer veya birim ara..." style="min-width:240px">' +
+            '<select class="select" id="metricCategoryFilter" style="width:auto">' +
+            '<option value="">Tüm kategoriler</option>' +
+            '<option value="blood_pressure">Tansiyon</option><option value="pulse">Nabız</option>' +
+            '<option value="weight">Kilo</option><option value="glucose">Kan Şekeri</option>' +
+            '<option value="temperature">Sıcaklık</option><option value="spo2">Oksijen</option>' +
+            '<option value="other">Diğer</option></select></div>' +
+            '<div class="toolbar-group">' +
+            '<label class="inline-check"><input type="checkbox" id="metricsSelectAll"> Tümünü seç</label>' +
+            '<button type="button" class="btn btn-danger btn-sm" id="deleteSelectedMetricsBtn" disabled>Seçilenleri sil (0)</button>' +
+            '</div></div>' +
+            '<div id="metricsTable"></div>';
+
+        const search = document.getElementById('metricSearch');
+        const category = document.getElementById('metricCategoryFilter');
+        if (search) {
+            search.addEventListener('input', function () {
+                state.metrics.query = search.value;
+                renderMetricsTable();
+            });
+        }
+        if (category) {
+            category.addEventListener('change', function () {
+                state.metrics.category = category.value;
+                renderMetricsTable();
+            });
+        }
+        renderMetricsTable();
+    }
+
+    function renderMetricsTable() {
+        const container = document.getElementById('metricsTable');
+        if (!container) return;
+        const items = filteredMetrics();
+        const rows = items.length ? items.map(function (item) {
+            const checked = state.metrics.selected.has(item.id);
+            return '<tr>' +
+                '<td><input type="checkbox" data-metric-select="' + item.id + '"' +
+                (checked ? ' checked' : '') + ' aria-label="Metriği seç"></td>' +
+                '<td>' + esc(item.name) + '</td>' +
+                '<td>' + esc(formatNumber(item.value, 2)) + '</td>' +
+                '<td>' + esc(item.unit || '—') + '</td>' +
+                '<td><strong>' + formatDateTime(item.date) + '</strong></td>' +
+                '<td class="muted-cell">' + formatDateTime(item.created_at) + '</td>' +
+                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                'data-metric-delete="' + item.id + '">Sil</button></td></tr>';
+        }).join('') : '<tr><td colspan="7" class="empty">Filtreye uygun metrik kaydı yok.</td></tr>';
+
+        container.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
+            '<th></th><th>Metrik</th><th>Değer</th><th>Birim</th>' +
+            '<th>Ölçüm Tarihi</th><th>Sisteme Girildi</th><th></th>' +
             '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+        const count = document.getElementById('metricsCount');
+        if (count) count.textContent = formatNumber(items.length) + ' / ' +
+            formatNumber(state.metrics.items.length) + ' kayıt';
+        const selectAll = document.getElementById('metricsSelectAll');
+        if (selectAll) {
+            const selectedCount = items.filter(function (item) {
+                return state.metrics.selected.has(item.id);
+            }).length;
+            selectAll.checked = items.length > 0 && selectedCount === items.length;
+            selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
+        }
+        const deleteButton = document.getElementById('deleteSelectedMetricsBtn');
+        if (deleteButton) {
+            deleteButton.disabled = state.metrics.selected.size === 0;
+            deleteButton.textContent = 'Seçilenleri sil (' + state.metrics.selected.size + ')';
+        }
     }
 
     async function addMetric(form) {
+        const recordedAt = form.elements.recorded_at.value;
         const payload = {
             name: form.elements.name.value.trim(),
             value: Number(form.elements.value.value),
-            unit: form.elements.unit.value.trim() || null
+            unit: form.elements.unit.value.trim() || null,
+            recorded_at: recordedAt ? new Date(recordedAt).toISOString() : null
         };
         const button = form.querySelector('button[type="submit"]');
         if (button) button.disabled = true;
@@ -920,6 +1052,26 @@
             if (error instanceof AuthError) return;
             showToast(error.message, 'error');
         }
+    }
+
+    async function deleteSelectedMetrics() {
+        const ids = Array.from(state.metrics.selected);
+        if (!ids.length) return;
+        if (!window.confirm(ids.length + ' metrik kaydı silinsin mi?')) return;
+        const button = document.getElementById('deleteSelectedMetricsBtn');
+        if (button) button.disabled = true;
+        let deleted = 0;
+        for (const id of ids) {
+            try {
+                await api('/api/user/metrics/' + encodeURIComponent(id), { method: 'DELETE' });
+                deleted += 1;
+            } catch (error) {
+                if (error instanceof AuthError) return;
+                showToast(error.message, 'error');
+            }
+        }
+        showToast(deleted + ' metrik silindi.', deleted === ids.length ? 'success' : 'error');
+        await navigate('/patient/metrics', { push: false });
     }
 
     /* ------------------------------------------------------------------ */

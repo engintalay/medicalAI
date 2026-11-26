@@ -383,16 +383,19 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
   ve SpO2 değerleri yalnızca geçerli aralıktaysa `health_metrics` tablosuna kaydedilir.
 - Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
   özel RAG parçaları) daima JWT'deki `user_id` ile filtrelenir.
+- `health_metrics.recorded_at` kullanıcının girdiği **ölçüm tarihi**,
+  `created_at` ise **sisteme giriş zamanıdır**; listeleme/sıralama/istatistikler ölçüm tarihine göre yapılır.
 - Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
 
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 72 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 73 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
-  hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler).
+  hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler,
+  ölçüm tarihi ve sistem giriş zamanının ayrı saklanması).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -420,7 +423,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
 | `/patient/chat` | RAG sohbeti, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
-| `/patient/metrics` | Sağlık metriği ekleme, geçmiş ve **kendi metriğini silme** |
+| `/patient/metrics` | Ölçüm tarihi girişi, arama, kategori filtresi, çoklu seçim/toplu silme ve geçmiş |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
@@ -449,6 +452,7 @@ GET /docs                   200
 POST /api/auth/register     201  → token
 POST /api/user/metrics      201  → GET /api/user/dashboard 200
 DELETE /api/user/metrics/{id} 200 → dashboard'da kayıt kalmadı
+POST /api/user/metrics recorded_at=2024-01-02 → ölçüm tarihi 2024, giriş zamanı 2026
 POST /api/reminders         201  → GET /api/reminders 200
 GET /api/uploads            200 · GET /api/conversations 200
 GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200
