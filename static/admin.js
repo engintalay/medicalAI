@@ -28,6 +28,7 @@
         healthDefinitions: [],
         healthMetrics: [],
         healthEditingId: null,
+        healthDefinitionEditingId: null,
         toastTimer: null
     };
 
@@ -360,6 +361,17 @@
                     Number(userToggleBtn.getAttribute('data-user-toggle')),
                     userToggleBtn.getAttribute('data-user-active') === 'true'
                 );
+                return;
+            }
+
+            const definitionEdit = event.target.closest('[data-definition-edit]');
+            if (definitionEdit) {
+                editMetricDefinition(Number(definitionEdit.getAttribute('data-definition-edit')));
+                return;
+            }
+
+            if (event.target.closest('#definitionCancelEditBtn')) {
+                resetMetricDefinitionForm();
                 return;
             }
 
@@ -1007,6 +1019,7 @@
                 '<td>' + (item.is_active ? '<span class="badge badge-success">Aktif</span>' :
                     '<span class="badge badge-warning">Pasif</span>') + '</td>' +
                 '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-definition-edit="' + item.id + '">Düzenle</button>' +
                 '<button type="button" class="btn btn-secondary btn-sm" data-definition-toggle="' + item.id +
                 '" data-active="' + (item.is_active ? 'false' : 'true') + '">' +
                 (item.is_active ? 'Pasife al' : 'Aktifleştir') + '</button>' +
@@ -1026,7 +1039,33 @@
         if (select) select.innerHTML = adminMetricOptionsHTML();
     }
 
+    function editMetricDefinition(definitionId) {
+        const item = state.healthDefinitions.find(function (row) { return row.id === definitionId; });
+        const form = document.getElementById('metricDefinitionForm');
+        if (!item || !form) return;
+        state.healthDefinitionEditingId = item.id;
+        form.elements.metric_key.value = item.metric_key;
+        form.elements.label.value = item.label;
+        form.elements.unit.value = item.unit || '';
+        form.elements.category.value = item.category;
+        form.elements.min_value.value = item.min_value === null ? '' : item.min_value;
+        form.elements.max_value.value = item.max_value === null ? '' : item.max_value;
+        document.getElementById('definitionSubmitBtn').textContent = 'Güncelle';
+        document.getElementById('definitionCancelEditBtn').classList.remove('hidden');
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function resetMetricDefinitionForm() {
+        const form = document.getElementById('metricDefinitionForm');
+        if (!form) return;
+        state.healthDefinitionEditingId = null;
+        form.reset();
+        document.getElementById('definitionSubmitBtn').textContent = 'Tanım ekle';
+        document.getElementById('definitionCancelEditBtn').classList.add('hidden');
+    }
+
     async function saveMetricDefinition(form) {
+        const editingId = state.healthDefinitionEditingId;
         const payload = {
             metric_key: form.elements.metric_key.value.trim(),
             label: form.elements.label.value.trim(),
@@ -1036,12 +1075,19 @@
             max_value: form.elements.max_value.value === '' ? null : Number(form.elements.max_value.value),
             is_active: true
         };
-        const button = form.querySelector('button[type="submit"]');
+        const button = document.getElementById('definitionSubmitBtn');
         if (button) button.disabled = true;
         try {
-            await api('/health/metric-definitions', { method: 'POST', body: payload });
-            showToast('Metrik tanımı eklendi.', 'success');
-            form.reset();
+            if (editingId !== null) {
+                await api('/health/metric-definitions/' + encodeURIComponent(editingId), {
+                    method: 'PATCH', body: payload
+                });
+                showToast('Metrik tanımı güncellendi.', 'success');
+            } else {
+                await api('/health/metric-definitions', { method: 'POST', body: payload });
+                showToast('Metrik tanımı eklendi.', 'success');
+            }
+            resetMetricDefinitionForm();
             await refreshMetricDefinitions();
         } catch (error) {
             if (error instanceof AuthError) return;
@@ -1160,7 +1206,8 @@
             '<input class="input" id="definitionMin" name="min_value" type="number" step="any"></div>' +
             '<div class="field"><label class="label" for="definitionMax">Max değer</label>' +
             '<input class="input" id="definitionMax" name="max_value" type="number" step="any"></div>' +
-            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Tanım ekle</button></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary" id="definitionSubmitBtn">Tanım ekle</button>' +
+            '<button type="button" class="btn btn-secondary hidden" id="definitionCancelEditBtn">Vazgeç</button></div>' +
             '</form><div id="metricDefinitionsTable" style="margin-top:16px"></div></div>' +
             '<div class="section-head"><h3 class="section-title">Ölçümler</h3></div>' +
             '<div id="healthTable"></div>';

@@ -104,6 +104,27 @@ def test_patient_metric_uses_definition_unit_and_range(client, patient_headers):
     client.delete(f"/api/user/metrics/{metric_id}", headers=patient_headers)
 
 
+def test_admin_can_edit_metric_definition_name(client, admin_headers, patient_headers):
+    old_key = "qa_name_" + uuid.uuid4().hex[:8]
+    new_key = old_key + "_new"
+    try:
+        created = client.post("/admin/api/health/metric-definitions", headers=admin_headers, json={
+            "metric_key": old_key, "label": "Eski Ad", "unit": "x", "category": "other",
+        })
+        definition_id = created.json()["data"]["id"]
+        updated = client.patch(f"/admin/api/health/metric-definitions/{definition_id}",
+                               headers=admin_headers, json={
+                                   "metric_key": new_key, "label": "Yeni Ad", "unit": "y",
+                               })
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["data"]["metric_key"] == new_key
+        visible = client.get("/api/user/metric-definitions", headers=patient_headers).json()["data"]
+        assert any(item["metric_key"] == new_key and item["label"] == "Yeni Ad" for item in visible)
+        assert all(item["metric_key"] != old_key for item in visible)
+    finally:
+        _cleanup([old_key, new_key])
+
+
 def test_admin_can_edit_user_metric(client, admin_headers, patient):
     user_id = patient["user_id"]
     created = client.post("/admin/api/health/metrics", headers=admin_headers,
