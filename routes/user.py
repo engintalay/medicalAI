@@ -190,6 +190,56 @@ async def add_metric(body: MetricRequest, user: dict = Depends(require_patient))
             conn.close()
 
 
+@router.put("/api/user/metrics/{metric_id}", summary="Sağlık Metriği Güncelle")
+async def update_metric(
+    metric_id: int,
+    body: MetricRequest,
+    user: dict = Depends(require_patient),
+):
+    if not (body.name or "").strip():
+        return JSONResponse(status_code=400, content={"success": False, "error": "Metrik adı boş olamaz."})
+    recorded_at = body.recorded_at
+    if recorded_at is not None:
+        if recorded_at.tzinfo is None:
+            recorded_at = recorded_at.replace(tzinfo=timezone.utc)
+        if recorded_at > datetime.now(timezone.utc) + timedelta(minutes=5):
+            return JSONResponse(status_code=400, content={
+                "success": False, "error": "Ölçüm tarihi gelecek olamaz."
+            })
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE health_metrics SET metric_name = %s, value = %s, unit = %s, "
+                "recorded_at = COALESCE(%s, recorded_at) "
+                "WHERE metric_id = %s AND user_id = %s "
+                "RETURNING metric_id, metric_name, value, unit, recorded_at",
+                (body.name.strip(), body.value, body.unit, recorded_at,
+                 metric_id, int(user["user_id"])),
+            )
+            row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return JSONResponse(status_code=404, content={
+                "success": False, "error": "Metrik bulunamadı."
+            })
+        conn.commit()
+        return JSONResponse(status_code=200, content={"success": True, "data": {
+            "id": row[0], "name": row[1], "value": _json_value(row[2]),
+            "unit": row[3] or "", "date": _json_value(row[4]),
+        }})
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        return JSONResponse(status_code=500, content={
+            "success": False, "error": str(exc)[:160]
+        })
+    finally:
+        if conn:
+            conn.close()
+
+
 @router.delete("/api/user/metrics/{metric_id}", summary="Sağlık Metriği Sil")
 async def delete_metric(metric_id: int, user: dict = Depends(require_patient)):
     """Yalnızca JWT'deki hastaya ait metriği siler."""

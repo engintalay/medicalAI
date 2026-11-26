@@ -56,6 +56,31 @@ def test_metric_measurement_date_and_future_rejection(client, patient_headers):
     assert future.status_code == 400
 
 
+def test_metric_update_and_validation(client, patient_headers):
+    marker = "update-" + uuid.uuid4().hex[:8]
+    created = client.post("/api/user/metrics", headers=patient_headers, json={
+        "name": marker, "value": 10, "unit": "eski", "recorded_at": "2024-01-01T00:00:00Z",
+    })
+    metric_id = created.json()["data"]["id"]
+    updated = client.put(f"/api/user/metrics/{metric_id}", headers=patient_headers, json={
+        "name": marker, "value": 12.5, "unit": "yeni", "recorded_at": "2024-02-03T04:05:06Z",
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["value"] == 12.5
+    dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+    item = next(row for row in dashboard["metrics"] if row["id"] == metric_id)
+    assert item["value"] == 12.5
+    assert item["unit"] == "yeni"
+    assert item["date"].startswith("2024-02-03")
+
+    future = client.put(f"/api/user/metrics/{metric_id}", headers=patient_headers, json={
+        "name": marker, "value": 13, "recorded_at": "2099-01-01T00:00:00Z",
+    })
+    assert future.status_code == 400
+    assert client.put("/api/user/metrics/99999999", headers=patient_headers,
+                      json={"name": "yok", "value": 1}).status_code == 404
+
+
 def test_metric_delete_and_ownership(client, patient_headers, cfg):
     marker = "delete-" + uuid.uuid4().hex[:8]
     created = client.post("/api/user/metrics", headers=patient_headers, json={

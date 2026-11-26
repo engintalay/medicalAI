@@ -2119,6 +2119,45 @@
         "description": "Hasta: kendi dosyasını güvenli inline önizle"
       },
       "response": []
+    },
+    {
+      "name": "PUT /api/user/metrics/:metric_id",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/metrics/:metric_id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "user",
+            "metrics",
+            ":metric_id"
+          ]
+        },
+        "description": "Hasta: kendi metriğini düzenle",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"weight\",\n  \"value\": 69.5,\n  \"unit\": \"kg\",\n  \"recorded_at\": \"2026-11-22T14:30:00+03:00\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
     }
   ]
 }

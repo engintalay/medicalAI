@@ -23,7 +23,7 @@
         page: 'dashboard',
         authMode: 'login',
         chat: { conversations: [], activeId: null, messages: [], upload: null },
-        metrics: { items: [], query: '', category: '', selected: new Set() },
+        metrics: { items: [], query: '', category: '', selected: new Set(), editingId: null },
         uploads: { items: [], selected: new Set(), previews: {} },
         toastTimer: null
     };
@@ -413,6 +413,17 @@
             const reminderDelete = event.target.closest('[data-reminder-delete]');
             if (reminderDelete) {
                 deleteReminder(Number(reminderDelete.getAttribute('data-reminder-delete')));
+                return;
+            }
+
+            const metricEdit = event.target.closest('[data-metric-edit]');
+            if (metricEdit) {
+                editMetric(Number(metricEdit.getAttribute('data-metric-edit')));
+                return;
+            }
+
+            if (event.target.closest('#metricCancelEditBtn')) {
+                resetMetricForm();
                 return;
             }
 
@@ -1067,6 +1078,7 @@
         state.metrics.query = '';
         state.metrics.category = '';
         state.metrics.selected = new Set();
+        state.metrics.editingId = null;
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Metriklerim</h2>' +
@@ -1082,7 +1094,8 @@
             '<div class="field"><label class="label" for="metricRecordedAt">Ölçüm tarihi ve saati</label>' +
             '<input class="input" id="metricRecordedAt" name="recorded_at" type="datetime-local" required ' +
             'value="' + localDateTimeInputValue() + '"></div>' +
-            '</div><div class="form-actions"><button type="submit" class="btn btn-primary">Kaydet</button></div>' +
+            '</div><div class="form-actions"><button type="submit" class="btn btn-primary" id="metricSubmitBtn">Kaydet</button>' +
+            '<button type="button" class="btn btn-secondary hidden" id="metricCancelEditBtn">Vazgeç</button></div>' +
             '</form>' +
             '<div class="section-head"><div class="section-title">Geçmiş</div>' +
             '<span class="hint" id="metricsCount"></span></div>' +
@@ -1132,8 +1145,10 @@
                 '<td>' + esc(item.unit || '—') + '</td>' +
                 '<td><strong>' + formatDateTime(item.date) + '</strong></td>' +
                 '<td class="muted-cell">' + formatDateTime(item.created_at) + '</td>' +
-                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
-                'data-metric-delete="' + item.id + '">Sil</button></td></tr>';
+                '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-metric-edit="' + item.id + '">Düzenle</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" data-metric-delete="' + item.id + '">Sil</button>' +
+                '</td></tr>';
         }).join('') : '<tr><td colspan="7" class="empty">Filtreye uygun metrik kaydı yok.</td></tr>';
 
         container.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr>' +
@@ -1159,6 +1174,34 @@
         }
     }
 
+    function editMetric(metricId) {
+        const item = state.metrics.items.find(function (row) { return row.id === metricId; });
+        const form = document.getElementById('metricForm');
+        if (!item || !form) return;
+        state.metrics.editingId = item.id;
+        form.elements.name.value = item.name || '';
+        form.elements.value.value = item.value;
+        form.elements.unit.value = item.unit || '';
+        form.elements.recorded_at.value = localDateTimeInputValue(item.date);
+        const submit = document.getElementById('metricSubmitBtn');
+        const cancel = document.getElementById('metricCancelEditBtn');
+        if (submit) submit.textContent = 'Güncelle';
+        if (cancel) cancel.classList.remove('hidden');
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        form.elements.name.focus();
+    }
+
+    function resetMetricForm() {
+        const form = document.getElementById('metricForm');
+        if (!form) return;
+        state.metrics.editingId = null;
+        form.reset();
+        const submit = document.getElementById('metricSubmitBtn');
+        const cancel = document.getElementById('metricCancelEditBtn');
+        if (submit) submit.textContent = 'Kaydet';
+        if (cancel) cancel.classList.add('hidden');
+    }
+
     async function addMetric(form) {
         const recordedAt = form.elements.recorded_at.value;
         const payload = {
@@ -1167,11 +1210,19 @@
             unit: form.elements.unit.value.trim() || null,
             recorded_at: recordedAt ? new Date(recordedAt).toISOString() : null
         };
+        const editingId = state.metrics.editingId;
         const button = form.querySelector('button[type="submit"]');
         if (button) button.disabled = true;
         try {
-            await api('/api/user/metrics', { method: 'POST', body: payload });
-            showToast('Metrik kaydedildi.', 'success');
+            if (editingId !== null) {
+                await api('/api/user/metrics/' + encodeURIComponent(editingId), {
+                    method: 'PUT', body: payload
+                });
+                showToast('Metrik güncellendi.', 'success');
+            } else {
+                await api('/api/user/metrics', { method: 'POST', body: payload });
+                showToast('Metrik kaydedildi.', 'success');
+            }
             await navigate('/patient/metrics', { push: false });
         } catch (error) {
             if (error instanceof AuthError) return;
