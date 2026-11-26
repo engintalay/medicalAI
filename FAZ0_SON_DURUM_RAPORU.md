@@ -349,7 +349,8 @@ sudo systemctl status medical-ai
   `/admin/api/users` (GET list, POST create, PATCH status), `/admin/api/monitoring`, `/admin/api/uploads/stats`,
   `/admin/api/health/*`, `/admin/api/health/metric-definitions`, `/admin/api/research`, `/admin/api/rag/documents`,
   `/admin/api/rag/ingest`, `/admin/api/rag/upload`, `/admin/api/rag/import-url`,
-  `/admin/api/rag/drug-search`, `/admin/api/utils/secret/{key}`.
+  `/admin/api/rag/drug-search`, `/admin/api/rag/document-content`,
+  `/admin/api/rag/reindex`, `/admin/api/utils/secret/{key}`.
 - Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
 
 ## 4. Operasyon prosedürleri
@@ -406,7 +407,7 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 97 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 99 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
@@ -436,7 +437,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) + **metrik tanımı kataloğu yönetimi** |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
 | `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
-| `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **ilaç arama/seçim**, listeleme, silme |
+| `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **içerik görüntüleme/düzenleme/yeniden indexleme**, ilaç arama/seçim, listeleme, silme |
 
 ### Hasta ekranları (`/patient/...`)
 | Adres | Ekran |

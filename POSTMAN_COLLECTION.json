@@ -2366,6 +2366,105 @@
         "description": "Admin: kullanılmayan metrik tanımını sil"
       },
       "response": []
+    },
+    {
+      "name": "GET /admin/api/rag/document-content",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/document-content",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "document-content"
+          ]
+        },
+        "description": "Admin: public RAG kaynak içeriği"
+      },
+      "response": []
+    },
+    {
+      "name": "PUT /admin/api/rag/document-content",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/document-content",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "document-content"
+          ]
+        },
+        "description": "Admin: içeriği düzenle ve yeniden indexle",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source\": \"prospektus:majezik\",\n  \"content\": \"Düzenlenmiş içerik...\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /admin/api/rag/reindex",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/reindex",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "reindex"
+          ]
+        },
+        "description": "Admin: mevcut kaynağı yeniden indexle"
+      },
+      "response": []
     }
   ]
 }

@@ -41,6 +41,11 @@ class UrlImportRequest(BaseModel):
     url: str
 
 
+class RagContentUpdate(BaseModel):
+    source: str
+    content: str
+
+
 RAG_FILE_PROMPT = (
     "Bu ilaç prospektüsü/belgesindeki metni olduğu gibi çıkar. İlaç adı, etken madde, "
     "kullanma talimatı, doz, uyarılar, yan etkiler ve etkileşimler varsa başlıklarını koru. "
@@ -163,6 +168,51 @@ def _import_url_sync(source, url, user_id):
         })
 
 
+def _public_source_detail_sync(source: str):
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT doc_id, content, metadata, created_at FROM rag_documents "
+                "WHERE source_type = %s AND user_id IS NULL ORDER BY doc_id",
+                (source,),
+            )
+            rows = cur.fetchall()
+        if not rows:
+            return None
+        chunks = []
+        for row in rows:
+            metadata = row[2] if isinstance(row[2], dict) else {}
+            chunks.append({
+                "id": row[0], "content": row[1], "metadata": metadata, "created_at": row[3],
+            })
+        return {
+            "source": source,
+            "text": "\n\n".join(row[1] for row in rows),
+            "chunks": chunks,
+            "metadata": chunks[0]["metadata"] if chunks else {},
+        }
+    finally:
+        if conn:
+            conn.close()
+
+
+def _replace_public_source_sync(source: str, content: str, metadata: dict | None = None):
+    try:
+        result = _ingest_text_sync(
+            source, content, None,
+            {**(metadata or {}), "scope": "public", "edited": True},
+        )
+        return JSONResponse(status_code=200, content={"success": True, "data": result})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(exc)})
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={
+            "success": False, "error": "Yeniden indexleme başarısız: " + str(exc)[:160]
+        })
+
+
 @router.post("/api/rag/ingest", summary="RAG İçerik Ekle")
 @router.post("/api/rag/add-document", include_in_schema=False)
 async def rag_ingest(body: IngestRequest, user: dict = Depends(require_patient)):
@@ -246,6 +296,7 @@ async def admin_list_rag_documents(request: Request):
                        MIN(created_at) AS created_at,
                        MAX(updated_at) AS updated_at
                 FROM rag_documents
+                WHERE user_id IS NULL
                 GROUP BY source_type
                 ORDER BY source_type
                 """
@@ -312,6 +363,49 @@ async def admin_rag_drug_search(q: str, request: Request):
         return JSONResponse(status_code=200, content={"success": True, "data": results})
     except web_import.WebImportError as exc:
         return JSONResponse(status_code=exc.status_code, content={"success": False, "error": str(exc)})
+
+
+@router.get("/admin/api/rag/document-content", summary="Admin RAG Kaynak İçeriği")
+async def admin_rag_document_content(source: str, request: Request):
+    _, error = _admin_from_request(request)
+    if error:
+        return error
+    detail = await asyncio.to_thread(_public_source_detail_sync, source)
+    if not detail:
+        return JSONResponse(status_code=404, content={
+            "success": False, "error": "Public RAG kaynağı bulunamadı."
+        })
+    return JSONResponse(status_code=200, content={"success": True, "data": detail})
+
+
+@router.put("/admin/api/rag/document-content", summary="Admin RAG İçeriğini Düzenle ve Yeniden Indexle")
+async def admin_rag_update_content(body: RagContentUpdate, request: Request):
+    _, error = _admin_from_request(request)
+    if error:
+        return error
+    detail = await asyncio.to_thread(_public_source_detail_sync, body.source)
+    if not detail:
+        return JSONResponse(status_code=404, content={
+            "success": False, "error": "Public RAG kaynağı bulunamadı."
+        })
+    return await asyncio.to_thread(
+        _replace_public_source_sync, body.source, body.content, detail.get("metadata")
+    )
+
+
+@router.post("/admin/api/rag/reindex", summary="Admin RAG Kaynağını Yeniden Indexle")
+async def admin_rag_reindex(source: str, request: Request):
+    _, error = _admin_from_request(request)
+    if error:
+        return error
+    detail = await asyncio.to_thread(_public_source_detail_sync, source)
+    if not detail:
+        return JSONResponse(status_code=404, content={
+            "success": False, "error": "Public RAG kaynağı bulunamadı."
+        })
+    return await asyncio.to_thread(
+        _replace_public_source_sync, source, detail["text"], detail.get("metadata")
+    )
 
 
 @router.delete("/admin/api/rag/documents/{source}", summary="Admin RAG Kaynağını Sil")

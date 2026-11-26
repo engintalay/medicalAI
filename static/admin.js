@@ -314,6 +314,27 @@
                 return;
             }
 
+            const ragEditBtn = event.target.closest('[data-rag-edit]');
+            if (ragEditBtn) {
+                openRagEditor(ragEditBtn.getAttribute('data-rag-edit'));
+                return;
+            }
+
+            if (event.target.closest('#ragEditorCloseBtn')) {
+                closeRagEditor();
+                return;
+            }
+
+            if (event.target.closest('#ragEditorSaveBtn')) {
+                saveRagEditor();
+                return;
+            }
+
+            if (event.target.closest('#ragEditorReindexBtn')) {
+                reindexRagEditor();
+                return;
+            }
+
             const ragDeleteBtn = event.target.closest('[data-rag-delete]');
             if (ragDeleteBtn) {
                 deleteRagSource(ragDeleteBtn.getAttribute('data-rag-delete'));
@@ -2219,7 +2240,9 @@
                 '<td>' + formatNumber(item.chunks) + '</td>' +
                 '<td>' + formatNumber(item.public_chunks) + '</td>' +
                 '<td>' + formatDateTime(item.created_at) + '</td>' +
-                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                '<td class="actions-cell"><button type="button" class="btn btn-secondary btn-sm" ' +
+                'data-rag-edit="' + esc(item.source) + '">Düzenle</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" ' +
                 'data-rag-delete="' + esc(item.source) + '">Sil</button></td>' +
                 '</tr>';
         }).join('') : '<tr><td colspan="5" class="empty">Henüz RAG içeriği yok.</td></tr>';
@@ -2264,6 +2287,16 @@
             '<div class="form-actions"><button type="submit" class="btn btn-secondary">Ara</button></div>' +
             '<div id="drugSearchResults" class="status-list" style="margin-top:14px"></div></form>' +
             '</div>' +
+            '</div>' +
+            '<div class="card hidden" id="ragEditor" style="margin-top:16px">' +
+            '<div class="card-head"><div><div class="card-title">RAG İçeriğini Düzenle</div>' +
+            '<div class="hint" id="ragEditorSource"></div></div>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="ragEditorCloseBtn">Kapat</button></div>' +
+            '<div class="field"><label class="label" for="ragEditorText">Kaynak içeriği</label>' +
+            '<textarea class="input" id="ragEditorText" style="min-height:320px"></textarea>' +
+            '<span class="hint">Kaydettiğinde içerik yeniden parçalanır ve embedding’leri yeniden oluşturulur.</span></div>' +
+            '<div class="form-actions"><button type="button" class="btn btn-primary" id="ragEditorSaveBtn">Kaydet ve yeniden indexle</button>' +
+            '<button type="button" class="btn btn-secondary" id="ragEditorReindexBtn">Sadece yeniden indexle</button></div></div>' +
             '<div class="section-head"><div class="section-title">Kaynaklar</div>' +
             '<span class="hint">' + formatNumber(items.length) + ' kaynak</span></div>' +
             '<div class="table-wrap"><table class="table"><thead><tr>' +
@@ -2360,6 +2393,86 @@
         } catch (error) {
             if (error instanceof AuthError) return;
             showToast(error.message, 'error');
+        }
+    }
+
+    async function openRagEditor(source) {
+        const editor = document.getElementById('ragEditor');
+        const textarea = document.getElementById('ragEditorText');
+        const label = document.getElementById('ragEditorSource');
+        if (!editor || !textarea) return;
+        editor.classList.remove('hidden');
+        label.textContent = source;
+        textarea.value = 'Yükleniyor...';
+        textarea.disabled = true;
+        editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        try {
+            const response = await api('/rag/document-content?source=' + encodeURIComponent(source));
+            const data = response.data || {};
+            textarea.value = data.text || '';
+            editor.setAttribute('data-source', source);
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            textarea.value = '';
+            showToast(error.message, 'error');
+        } finally {
+            textarea.disabled = false;
+        }
+    }
+
+    function closeRagEditor() {
+        const editor = document.getElementById('ragEditor');
+        if (editor) {
+            editor.classList.add('hidden');
+            editor.removeAttribute('data-source');
+        }
+    }
+
+    async function saveRagEditor() {
+        const editor = document.getElementById('ragEditor');
+        const textarea = document.getElementById('ragEditorText');
+        const source = editor ? editor.getAttribute('data-source') : '';
+        const content = textarea ? textarea.value : '';
+        if (!source) return;
+        if (!content.trim()) {
+            showToast('İçerik boş olamaz.', 'error');
+            return;
+        }
+        const button = document.getElementById('ragEditorSaveBtn');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/rag/document-content', {
+                method: 'PUT', body: { source: source, content: content }
+            });
+            const info = response.data || {};
+            showToast(formatNumber(info.chunks) + ' parça yeniden indexlendi.', 'success');
+            closeRagEditor();
+            await navigate('/admin/rag', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function reindexRagEditor() {
+        const editor = document.getElementById('ragEditor');
+        const source = editor ? editor.getAttribute('data-source') : '';
+        if (!source) return;
+        const button = document.getElementById('ragEditorReindexBtn');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/rag/reindex?source=' + encodeURIComponent(source), { method: 'POST' });
+            const info = response.data || {};
+            showToast(formatNumber(info.chunks) + ' parça yeniden indexlendi.', 'success');
+            closeRagEditor();
+            await navigate('/admin/rag', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
         }
     }
 
