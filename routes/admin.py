@@ -829,6 +829,42 @@ async def create_user(request: Request):
     })
 
 
+@admin_router.put("/users/{user_id}", summary="Kullanıcı Düzenle")
+async def update_user(user_id: int, request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        return JSONResponse(status_code=400, content={'success': False, 'error': 'JSON gövdesi gerekli.'})
+
+    header = request.headers.get('Authorization', '')
+    actor = {}
+    if header.startswith('Bearer '):
+        actor = auth_service.verify_token(header[7:], role='admin').get('user') or {}
+    try:
+        result = auth_service.admin_update_user(
+            user_id,
+            email=data.get('email'),
+            full_name=data.get('full_name'),
+            role=data.get('role'),
+            password=data.get('password') or None,
+            is_active=data.get('is_active') if isinstance(data.get('is_active'), bool) else None,
+            actor_user_id=actor.get('user_id'),
+        )
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={
+            'success': False, 'error': f'Kullanıcı güncellenemedi: {exc}'
+        })
+    if not result.get('success'):
+        return JSONResponse(status_code=400, content={
+            'success': False, 'error': result.get('message', 'Kullanıcı güncellenemedi')
+        })
+    return JSONResponse(status_code=200, content={
+        'success': True, 'message': result.get('message'), 'data': result.get('user')
+    })
+
+
 @admin_router.patch("/users/{user_id}", summary="Kullanıcıyı Aktifleştir / Pasife Al")
 async def update_user_status(user_id: int, request: Request):
     """Kendi hesabı ve son aktif admin korunur."""

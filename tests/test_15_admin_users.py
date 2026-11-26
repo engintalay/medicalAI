@@ -144,6 +144,42 @@ def test_admin_toggle_user_active(client, admin_headers):
         _cleanup([user_id])
 
 
+def test_admin_updates_user_credentials(client, admin_headers):
+    email = _email("qa_admin_update")
+    new_email = _email("qa_admin_updated")
+    created = client.post("/admin/api/users", headers=admin_headers, json={
+        "email": email, "password": "OldPassword123!", "full_name": "Eski Ad", "role": "patient",
+    })
+    assert created.status_code == 201, created.text
+    user_id = created.json()["data"]["user_id"]
+    try:
+        updated = client.put(f"/admin/api/users/{user_id}", headers=admin_headers, json={
+            "email": new_email, "full_name": "Yeni Ad", "role": "admin",
+            "password": "NewPassword123!", "is_active": True,
+        })
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["data"]["email"] == new_email
+        assert updated.json()["data"]["role"] == "admin"
+        login = client.post("/admin/api/auth/login", json={
+            "email": new_email, "password": "NewPassword123!",
+        })
+        assert login.status_code == 200, login.text
+    finally:
+        _cleanup([user_id])
+
+
+def test_admin_cannot_demote_self(client, admin_headers, cfg):
+    login = client.post("/admin/api/auth/login", json={
+        "email": "admin@medicalai.com", "password": cfg.get("admin_default_password", "changeme123"),
+    })
+    assert login.status_code == 200
+    own_id = login.json()["user"]["user_id"]
+    response = client.put(f"/admin/api/users/{own_id}", headers=admin_headers, json={
+        "role": "patient",
+    })
+    assert response.status_code == 400
+
+
 def test_admin_cannot_deactivate_self(client, admin_headers, cfg):
     login = client.post("/admin/api/auth/login", json={
         "email": "admin@medicalai.com",

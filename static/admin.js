@@ -31,6 +31,8 @@
         healthDefinitionEditingId: null,
         ragSources: [],
         ragSelected: new Set(),
+        adminUsers: [],
+        adminUserEditingId: null,
         toastTimer: null
     };
 
@@ -384,6 +386,17 @@
                 return;
             }
 
+            const userEditBtn = event.target.closest('[data-user-edit]');
+            if (userEditBtn) {
+                editAdminUser(Number(userEditBtn.getAttribute('data-user-edit')));
+                return;
+            }
+
+            if (event.target.closest('#adminUserEditCancelBtn')) {
+                closeAdminUserEditor();
+                return;
+            }
+
             const userToggleBtn = event.target.closest('[data-user-toggle]');
             if (userToggleBtn) {
                 toggleUserActive(
@@ -440,6 +453,9 @@
             } else if (form.getAttribute('data-form') === 'admin-user') {
                 event.preventDefault();
                 createAdminUser(form);
+            } else if (form.getAttribute('data-form') === 'admin-user-edit') {
+                event.preventDefault();
+                saveAdminUser(form);
             } else if (form.getAttribute('data-form') === 'metric-definition') {
                 event.preventDefault();
                 saveMetricDefinition(form);
@@ -720,6 +736,7 @@
             '<button type="button" class="btn btn-primary btn-sm" id="adminUserNewBtn">＋ Yeni Kullanıcı</button>' +
             '</div>' +
             '<div id="adminUserFormBox" class="hidden"></div>' +
+            '<div id="adminUserEditBox" class="hidden"></div>' +
             '<div id="usersTable"></div>';
 
         const search = document.getElementById('userSearch');
@@ -823,6 +840,70 @@
         }
     }
 
+    function editAdminUser(userId) {
+        const user = state.adminUsers.find(function (item) { return Number(item.user_id) === Number(userId); });
+        const box = document.getElementById('adminUserEditBox');
+        if (!user || !box) return;
+        state.adminUserEditingId = user.user_id;
+        box.classList.remove('hidden');
+        box.innerHTML =
+            '<form class="card" data-form="admin-user-edit" id="adminUserEditForm" style="margin-bottom:20px">' +
+            '<div class="card-head"><div class="card-title">Kullanıcıyı Düzenle · #' + esc(user.user_id) + '</div>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="adminUserEditCancelBtn">Kapat</button></div>' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="editUserEmail">E-posta</label>' +
+            '<input class="input" id="editUserEmail" name="email" type="email" required value="' + esc(user.email) + '"></div>' +
+            '<div class="field"><label class="label" for="editUserPassword">Yeni şifre (opsiyonel)</label>' +
+            '<input class="input" id="editUserPassword" name="password" type="password" minlength="8" ' +
+            'placeholder="Boş bırakırsanız mevcut şifre korunur"></div>' +
+            '<div class="field"><label class="label" for="editUserFullName">Ad Soyad</label>' +
+            '<input class="input" id="editUserFullName" name="full_name" required value="' + esc(user.full_name || '') + '"></div>' +
+            '<div class="field"><label class="label" for="editUserRole">Rol</label>' +
+            '<select class="select" id="editUserRole" name="role">' +
+            '<option value="patient"' + (user.role === 'patient' ? ' selected' : '') + '>Hasta</option>' +
+            '<option value="admin"' + (user.role === 'admin' ? ' selected' : '') + '>Admin</option></select></div>' +
+            '</div><label class="check-row"><input type="checkbox" id="editUserActive" name="is_active"' +
+            (user.is_active ? ' checked' : '') + '><span><span class="check-title">Kullanıcı aktif</span>' +
+            '<span class="check-hint">Pasif kullanıcı giriş yapamaz.</span></span></label>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Değişiklikleri kaydet</button></div>' +
+            '</form>';
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        document.getElementById('editUserFullName').focus();
+    }
+
+    function closeAdminUserEditor() {
+        const box = document.getElementById('adminUserEditBox');
+        if (box) {
+            box.classList.add('hidden');
+            box.innerHTML = '';
+        }
+        state.adminUserEditingId = null;
+    }
+
+    async function saveAdminUser(form) {
+        const userId = state.adminUserEditingId;
+        if (userId === null) return;
+        const payload = {
+            email: form.elements.email.value.trim(),
+            full_name: form.elements.full_name.value.trim(),
+            role: form.elements.role.value,
+            is_active: form.elements.is_active.checked
+        };
+        if (form.elements.password.value) payload.password = form.elements.password.value;
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            await api('/users/' + encodeURIComponent(userId), { method: 'PUT', body: payload });
+            showToast('Kullanıcı güncellendi.', 'success');
+            await navigate('/admin/users', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
     async function toggleUserActive(userId, isActive) {
         try {
             await api('/users/' + encodeURIComponent(userId), {
@@ -862,6 +943,7 @@
     function renderUsersTable(users, pagination) {
         const container = document.getElementById('usersTable');
         if (!container) return;
+        state.adminUsers = users || [];
 
         const rows = users.map(function (user) {
             const roleClass = user.role === 'admin' ? 'badge-info' : 'badge-success';
@@ -876,6 +958,7 @@
                 '<td>' + formatDateTime(user.created_at) + '</td>' +
                 '<td>' + formatDateTime(user.last_login) + '</td>' +
                 '<td class="actions-cell">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-user-edit="' + user.user_id + '">Düzenle</button>' +
                 (state.user && Number(state.user.user_id) === Number(user.user_id)
                     ? '<span class="hint">Kendiniz</span>'
                     : '<button type="button" class="btn btn-sm ' +

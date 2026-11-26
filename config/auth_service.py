@@ -455,6 +455,91 @@ class AuthService:
             cur.close()
             conn.close()
 
+    def admin_update_user(
+        self,
+        user_id: int,
+        email: Optional[str] = None,
+        full_name: Optional[str] = None,
+        role: Optional[str] = None,
+        password: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        actor_user_id: Optional[int] = None,
+    ):
+        """Admin kullanıcı düzenleme; kendi rolü ve son aktif admin korunur."""
+        fail = lambda message: {'success': False, 'message': message, 'user': None}
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return fail('Geçersiz kullanıcı')
+
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT user_id, email, full_name, role, is_active, created_at, last_login, "
+                "height_cm, weight_kg, birth_year, city FROM users WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return fail('Kullanıcı bulunamadı')
+            current = self._shape_user(row)
+
+            new_email = (email if email is not None else current['email']).strip().lower()
+            new_name = (full_name if full_name is not None else current['full_name']).strip()
+            new_role = (role if role is not None else current['role']).strip().lower()
+            new_active = current['is_active'] if is_active is None else bool(is_active)
+            if not new_email or '@' not in new_email:
+                return fail('Geçerli bir email adresi girin')
+            if not new_name:
+                return fail('Ad soyad zorunlu')
+            if new_role not in ('admin', 'patient'):
+                return fail('Rol admin veya patient olmalı')
+            if password and len(password) < 8:
+                return fail('Şifre en az 8 karakter olmalı')
+            if actor_user_id is not None and user_id == int(actor_user_id):
+                if new_role != 'admin':
+                    return fail('Kendi admin rolünüzü kaldıramazsınız')
+                if not new_active:
+                    return fail('Kendi hesabınızı pasife alamazsınız')
+            if current['role'] == 'admin' and current['is_active'] and (new_role != 'admin' or not new_active):
+                cur.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=TRUE")
+                if int(cur.fetchone()[0] or 0) <= 1:
+                    return fail('Son aktif adminun rolü veya aktifliği değiştirilemez')
+
+            cur.execute("SELECT 1 FROM users WHERE lower(email)=%s AND user_id<>%s", (new_email, user_id))
+            if cur.fetchone():
+                return fail('Bu email ile kayıtlı kullanıcı var')
+
+            sets = ["email=%s", "full_name=%s", "role=%s", "is_active=%s"]
+            values = [new_email, new_name, new_role, new_active]
+            if password:
+                sets.append("password_hash=%s")
+                values.append(self._bcrypt_hash(password))
+            values.append(user_id)
+            cur.execute(
+                "UPDATE users SET " + ", ".join(sets) + " WHERE user_id=%s "
+                "RETURNING user_id, email, full_name, role, is_active, created_at, last_login, "
+                "height_cm, weight_kg, birth_year, city",
+                tuple(values),
+            )
+            updated = cur.fetchone()
+            conn.commit()
+            user = self._shape_user(updated)
+            return {'success': True, 'message': 'Kullanıcı güncellendi', 'user': user, 'data': user}
+        except Exception as exc:
+            conn.rollback()
+            raise exc
+        finally:
+            cur.close()
+            conn.close()
+
     def _shape_user(self, row) -> Dict[str, Any]:
         """users satırını API yanıtına çevirir (şifre hash'i dahil edilmez)."""
         if len(row) >= 11:
