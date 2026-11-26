@@ -392,6 +392,12 @@
                 return;
             }
 
+            const metricDelete = event.target.closest('[data-metric-delete]');
+            if (metricDelete) {
+                deleteMetric(Number(metricDelete.getAttribute('data-metric-delete')));
+                return;
+            }
+
             const uploadDelete = event.target.closest('[data-upload-delete]');
             if (uploadDelete) {
                 deleteUpload(Number(uploadDelete.getAttribute('data-upload-delete')));
@@ -832,8 +838,10 @@
             return '<tr><td>' + esc(item.name) + '</td>' +
                 '<td>' + esc(formatNumber(item.value, 2)) + '</td>' +
                 '<td>' + esc(item.unit || '—') + '</td>' +
-                '<td>' + formatDateTime(item.date) + '</td></tr>';
-        }).join('') : '<tr><td colspan="4" class="empty">Henüz metrik kaydı yok.</td></tr>';
+                '<td>' + formatDateTime(item.date) + '</td>' +
+                '<td class="actions-cell"><button type="button" class="btn btn-danger btn-sm" ' +
+                'data-metric-delete="' + item.id + '">Sil</button></td></tr>';
+        }).join('') : '<tr><td colspan="5" class="empty">Henüz metrik kaydı yok.</td></tr>';
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Metriklerim</h2>' +
@@ -851,7 +859,7 @@
             '<div class="section-head"><div class="section-title">Geçmiş</div>' +
             '<span class="hint">' + formatNumber(items.length) + ' kayıt</span></div>' +
             '<div class="table-wrap"><table class="table"><thead><tr>' +
-            '<th>Metrik</th><th>Değer</th><th>Birim</th><th>Tarih</th>' +
+            '<th>Metrik</th><th>Değer</th><th>Birim</th><th>Tarih</th><th></th>' +
             '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
@@ -871,6 +879,18 @@
             if (error instanceof AuthError) return;
             showToast(error.message, 'error');
             if (button) button.disabled = false;
+        }
+    }
+
+    async function deleteMetric(metricId) {
+        if (!window.confirm('Bu metrik kaydı silinsin mi?')) return;
+        try {
+            await api('/api/user/metrics/' + encodeURIComponent(metricId), { method: 'DELETE' });
+            showToast('Metrik silindi.', 'success');
+            await navigate('/patient/metrics', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
         }
     }
 

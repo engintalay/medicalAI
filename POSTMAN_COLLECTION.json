@@ -1794,6 +1794,36 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "DELETE /api/user/metrics/:metric_id",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/user/metrics/:metric_id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "user",
+            "metrics",
+            ":metric_id"
+          ]
+        },
+        "description": "Hasta: yalnızca kendi sağlık metriğini sil"
+      },
+      "response": []
     }
   ]
 }

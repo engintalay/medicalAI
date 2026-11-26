@@ -338,7 +338,7 @@ sudo systemctl status medical-ai
 
 ## 3. API özeti
 
-- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics`,
+- Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (POST, DELETE),
   `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/chat` (opsiyonel dosya),
   `/api/conversations`, `/api/reminders`, `/api/notifications`,
   `/api/user/notification-preferences`, `/api/research` (admin token).
@@ -386,10 +386,11 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 70 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 71 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
-  LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma).
+  LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
+  hasta metriği silme ve sahiplik kontrolü).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -417,7 +418,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
 | `/patient/chat` | RAG sohbeti, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
-| `/patient/metrics` | Sağlık metriği ekleme ve geçmiş tablosu |
+| `/patient/metrics` | Sağlık metriği ekleme, geçmiş ve **kendi metriğini silme** |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
@@ -445,6 +446,7 @@ GET /admin/*  (11 sayfa)    200
 GET /docs                   200
 POST /api/auth/register     201  → token
 POST /api/user/metrics      201  → GET /api/user/dashboard 200
+DELETE /api/user/metrics/{id} 200 → dashboard'da kayıt kalmadı
 POST /api/reminders         201  → GET /api/reminders 200
 GET /api/uploads            200 · GET /api/conversations 200
 GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200

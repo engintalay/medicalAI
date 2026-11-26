@@ -74,17 +74,18 @@ def _weight_trend(conn, user_id: int) -> list:
 def _metric_history(conn, user_id: int) -> list:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT metric_name, value, unit, recorded_at FROM health_metrics "
+            "SELECT metric_id, metric_name, value, unit, recorded_at FROM health_metrics "
             "WHERE user_id = %s ORDER BY recorded_at DESC LIMIT 200",
             (user_id,),
         )
         rows = cur.fetchall()
     return [
         {
-            "name": r[0],
-            "value": _json_value(r[1]),
-            "unit": r[2] or "",
-            "date": _json_value(r[3]),
+            "id": r[0],
+            "name": r[1],
+            "value": _json_value(r[2]),
+            "unit": r[3] or "",
+            "date": _json_value(r[4]),
         }
         for r in rows
     ]
@@ -170,6 +171,39 @@ async def add_metric(body: MetricRequest, user: dict = Depends(require_patient))
         if conn:
             conn.rollback()
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.delete("/api/user/metrics/{metric_id}", summary="Sağlık Metriği Sil")
+async def delete_metric(metric_id: int, user: dict = Depends(require_patient)):
+    """Yalnızca JWT'deki hastaya ait metriği siler."""
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM health_metrics WHERE metric_id = %s AND user_id = %s "
+                "RETURNING metric_id",
+                (metric_id, int(user["user_id"])),
+            )
+            deleted = cur.fetchone()
+        if not deleted:
+            conn.rollback()
+            return JSONResponse(status_code=404, content={
+                "success": False, "error": "Metrik bulunamadı."
+            })
+        conn.commit()
+        return JSONResponse(status_code=200, content={
+            "success": True, "message": "Metrik silindi.", "data": {"id": deleted[0]}
+        })
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        return JSONResponse(status_code=500, content={
+            "success": False, "error": str(exc)[:160]
+        })
     finally:
         if conn:
             conn.close()

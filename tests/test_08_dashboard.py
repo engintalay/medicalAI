@@ -35,6 +35,47 @@ def test_export_formats_and_isolation(client, patient):
     assert client.get("/api/user/dashboard").status_code == 401
 
 
+def test_metric_delete_and_ownership(client, patient_headers, cfg):
+    marker = "delete-" + uuid.uuid4().hex[:8]
+    created = client.post("/api/user/metrics", headers=patient_headers, json={
+        "name": marker, "value": 12.5, "unit": "test",
+    })
+    assert created.status_code == 201, created.text
+    dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+    metric_id = next(item["id"] for item in dashboard["metrics"] if item["name"] == marker)
+
+    deleted = client.delete(f"/api/user/metrics/{metric_id}", headers=patient_headers)
+    assert deleted.status_code == 200, deleted.text
+    dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+    assert all(item["id"] != metric_id for item in dashboard["metrics"])
+
+    # Başka hasta aynı metriği silemez.
+    client.post("/api/user/metrics", headers=patient_headers, json={
+        "name": marker, "value": 13, "unit": "test",
+    })
+    dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+    protected_id = next(item["id"] for item in dashboard["metrics"] if item["name"] == marker)
+    email = "qa_" + uuid.uuid4().hex[:10] + "@example.com"
+    other = client.post("/api/auth/register", json={
+        "email": email, "password": "Patient123!", "full_name": "Diger Hasta",
+    })
+    other_id = other.json()["user"]["user_id"]
+    try:
+        other_headers = {"Authorization": "Bearer " + other.json()["token"]}
+        blocked = client.delete(f"/api/user/metrics/{protected_id}", headers=other_headers)
+        assert blocked.status_code == 404, blocked.text
+        dashboard = client.get("/api/user/dashboard", headers=patient_headers).json()["data"]
+        assert any(item["id"] == protected_id for item in dashboard["metrics"])
+    finally:
+        conn = cfg.connect_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM users WHERE user_id = %s", (other_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def test_other_user_metric_invisible(client, patient_headers):
     marker = "isolated-" + uuid.uuid4().hex[:8]
     client.post("/api/user/metrics", headers=patient_headers, json={"name": marker, "value": 1})
