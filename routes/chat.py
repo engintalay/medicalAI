@@ -137,14 +137,33 @@ def _build_messages(query: str, sources: list, history: list) -> list:
         )
     else:
         context = "İlgili RAG kaydı bulunamadı."
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "system", "content": "RAG KAYITLARI:\n" + context},
-    ]
+    # Bazı modellerin (ör. medgemma) Jinja şablonu birden fazla system mesajını
+    # ve user/assistant sırasını zorunlu kılar. Tüm sistem bağlamını tek mesaja
+    # indirgeyip geçmişi normalleştiriyoruz; aksi halde sunucu 400 döner.
+    system_content = SYSTEM_PROMPT + "\n\nRAG KAYITLARI:\n" + context
+    history_messages = []
     for row in history:
-        messages.append({"role": row[0], "content": row[1]})
-    messages.append({"role": "user", "content": query})
-    return messages
+        role = str(row[0] or '').strip().lower()
+        content = str(row[1] or '').strip()
+        if role not in ('user', 'assistant') or not content:
+            continue
+        if history_messages and history_messages[-1]['role'] == role:
+            history_messages[-1]['content'] += '\n\n' + content
+        else:
+            history_messages.append({'role': role, 'content': content})
+
+    # Şablonlar ilk mesajın user olmasını bekler; önce gelen assistant'ı at.
+    while history_messages and history_messages[0]['role'] == 'assistant':
+        history_messages.pop(0)
+
+    # Sondaki user mesajını yeni soruya ekle (ardışık user olmasın).
+    query_text = (query or '').strip()
+    if history_messages and history_messages[-1]['role'] == 'user':
+        trailing = history_messages.pop()['content']
+        query_text = trailing + '\n\n' + query_text
+
+    return [{"role": "system", "content": system_content}] + \
+        history_messages + [{"role": "user", "content": query_text}]
 
 
 def _get_conversation(conn, conversation_id: int, user_id: int):

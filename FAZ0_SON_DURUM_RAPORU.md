@@ -372,6 +372,8 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 - `/api/chat` yanıtına her durumda guardrail eklenir:
   "Bu bilgi tanı yerine geçmez; doktorunuza danışın."
 - Prompt'ta yalnızca RAG kayıtları bağlam olarak kullanılır; eksik bilgi uydurulmaz.
+- LLM'e **tek system mesajı** gönderilir; geçmiş user/assistant sırası normalize edilir.
+  medgemma gibi rol sırasını zorunlu kılan Jinja şablonlarıyla uyumluluk sağlanır.
 - Hasta verisi (`health_metrics`, `user_uploads`, `reminders`, `conversations`,
   özel RAG parçaları) daima JWT'deki `user_id` ile filtrelenir.
 - Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
@@ -379,9 +381,9 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 62 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 63 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
-  admin kullanıcı oluşturma ve aktiflik yönetimi).
+  admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)

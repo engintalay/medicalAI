@@ -41,6 +41,29 @@ def test_multi_turn_history(client, patient_headers, fake_llm):
     assert len(detail.json()["data"]["messages"]) == 4
 
 
+def test_chat_messages_alternate_for_strict_templates(client, patient_headers, fake_llm):
+    """medgemma gibi Jinja şablonları tek system ve user/assistant sırası ister."""
+    _ingest(client, patient_headers, "qa:strict:" + uuid.uuid4().hex[:8])
+    first = client.post("/api/chat", headers=patient_headers, json={
+        "message": "Hemoglobin nedir?"
+    })
+    assert first.status_code == 200, first.text
+    conversation_id = first.json()["data"]["conversation_id"]
+    second = client.post("/api/chat", headers=patient_headers, json={
+        "message": "Devamını anlatır mısın?", "conversation_id": conversation_id,
+    })
+    assert second.status_code == 200, second.text
+
+    roles = [m["role"] for m in fake_llm["handler"].last["messages"]]
+    assert roles.count("system") == 1
+    assert roles[0] == "system"
+    conversation_roles = roles[1:]
+    assert conversation_roles[0] == "user"
+    assert conversation_roles[-1] == "user"
+    for index, role in enumerate(conversation_roles):
+        assert role == ("user" if index % 2 == 0 else "assistant")
+
+
 def test_empty_and_unconfigured(client, patient_headers, cfg):
     assert client.post("/api/chat", headers=patient_headers, json={"message": "  "}).status_code == 400
     old_key = cfg.get("llm_api_key")
