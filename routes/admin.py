@@ -751,6 +751,96 @@ async def get_users(request: Request,
         }
     })
 
+def _optional_number(value, label: str):
+    """Form alanlarından gelen sayıyı normalize eder; boşsa None."""
+    if value is None or value == '':
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ValueError(label + ' sayı olmalı')
+
+
+@admin_router.post("/users", summary="Yeni Kullanıcı Oluştur")
+async def create_user(request: Request):
+    """Admin veya hasta rolünde yeni kullanıcı oluşturur (bcrypt şifre)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    if not isinstance(data, dict):
+        data = {}
+
+    try:
+        birth_year = _optional_number(data.get('birth_year'), 'Doğum yılı')
+        result = auth_service.admin_create_user(
+            email=data.get('email', ''),
+            password=data.get('password', ''),
+            full_name=data.get('full_name', ''),
+            role=data.get('role', 'patient'),
+            height_cm=_optional_number(data.get('height_cm'), 'Boy'),
+            weight_kg=_optional_number(data.get('weight_kg'), 'Kilo'),
+            birth_year=int(birth_year) if birth_year is not None else None,
+            city=data.get('city'),
+            is_active=data.get('is_active', True) is not False,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={
+            'success': False, 'error': str(exc)
+        })
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={
+            'success': False, 'error': f'Kullanıcı oluşturulamadı: {exc}'
+        })
+
+    if not result.get('success'):
+        return JSONResponse(status_code=400, content={
+            'success': False, 'error': result.get('message', 'Kullanıcı oluşturulamadı')
+        })
+    return JSONResponse(status_code=201, content={
+        'success': True,
+        'message': result.get('message'),
+        'data': result.get('user'),
+    })
+
+
+@admin_router.patch("/users/{user_id}", summary="Kullanıcıyı Aktifleştir / Pasife Al")
+async def update_user_status(user_id: int, request: Request):
+    """Kendi hesabı ve son aktif admin korunur."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get('is_active'), bool):
+        return JSONResponse(status_code=400, content={
+            'success': False, 'error': 'is_active boolean olmalı'
+        })
+
+    header = request.headers.get('Authorization', '')
+    actor = {}
+    if header.startswith('Bearer '):
+        actor = auth_service.verify_token(header[7:], role='admin').get('user') or {}
+
+    try:
+        result = auth_service.admin_set_active(
+            user_id, data['is_active'], actor.get('user_id')
+        )
+    except Exception as exc:
+        return JSONResponse(status_code=503, content={
+            'success': False, 'error': f'Kullanıcı durumu güncellenemedi: {exc}'
+        })
+
+    if not result.get('success'):
+        return JSONResponse(status_code=400, content={
+            'success': False, 'error': result.get('message', 'İşlem başarısız')
+        })
+    return JSONResponse(status_code=200, content={
+        'success': True,
+        'message': result.get('message'),
+        'data': result.get('user'),
+    })
+
+
 # --- 4. MONITORING ENDPOINTS ---
 
 @admin_router.get("/monitoring", summary="Sistem İzleme")

@@ -335,6 +335,126 @@ class AuthService:
             'user': user,
         }
 
+    def admin_create_user(
+        self,
+        email: str,
+        password: str,
+        full_name: str,
+        role: str = 'patient',
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
+        birth_year: Optional[int] = None,
+        city: Optional[str] = None,
+        is_active: bool = True,
+    ) -> Dict[str, Any]:
+        """Admin tarafından kullanıcı oluşturur (şifre her zaman bcrypt hash'lenir)."""
+        email = (email or '').strip().lower()
+        full_name = (full_name or '').strip()
+        role = (role or 'patient').strip().lower()
+        fail = lambda message: {'success': False, 'message': message, 'user': None}
+
+        if role not in ('admin', 'patient'):
+            return fail('Rol admin veya patient olmalı')
+        if not email or '@' not in email:
+            return fail('Geçerli bir email adresi girin')
+        if len(password or '') < 8:
+            return fail('Şifre en az 8 karakter olmalı')
+        if not full_name:
+            return fail('Ad soyad zorunlu')
+        try:
+            if birth_year is not None and not (1900 <= int(birth_year) <= datetime.utcnow().year):
+                return fail('Geçersiz doğum yılı')
+        except (TypeError, ValueError):
+            return fail('Geçersiz doğum yılı')
+        if self.get_user_by_email(email):
+            return fail('Bu email ile kayıtlı kullanıcı var')
+
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute("""
+                INSERT INTO users
+                    (email, password_hash, full_name, role, is_active,
+                     height_cm, weight_kg, birth_year, city)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING user_id, email, full_name, role, is_active,
+                          created_at, last_login, height_cm, weight_kg, birth_year, city
+            """, (
+                email, self._bcrypt_hash(password), full_name, role, bool(is_active),
+                height_cm, weight_kg, birth_year, city,
+            ))
+            row = cur.fetchone()
+            conn.commit()
+            if not row:
+                return fail('Bu email ile kayıtlı kullanıcı var')
+        except Exception as exc:
+            conn.rollback()
+            raise exc
+        finally:
+            cur.close()
+            conn.close()
+
+        user = self._shape_user(row)
+        return {'success': True, 'message': 'Kullanıcı oluşturuldu', 'user': user, 'data': user}
+
+    def admin_set_active(self, user_id: int, is_active: bool, actor_user_id: Optional[int] = None):
+        """Kullanıcıyı aktif/pasif yapar; son aktif admin ve kendi hesabı korunur."""
+        fail = lambda message: {'success': False, 'message': message, 'user': None}
+        try:
+            user_id = int(user_id)
+        except (TypeError, ValueError):
+            return fail('Geçersiz kullanıcı')
+
+        conn = psycopg2.connect(
+            host=self._config.get('db_host', 'localhost'),
+            port=int(self._config.get('db_port', '5432')),
+            dbname=self._config.get('db_name', 'medical_ai'),
+            user=self._config.get('db_user', 'medical_user'),
+            password=self._config.get('db_password', '')
+        )
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "SELECT user_id, email, full_name, role, is_active, created_at, last_login, "
+                "height_cm, weight_kg, birth_year, city FROM users WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return fail('Kullanıcı bulunamadı')
+            if not is_active and actor_user_id is not None and user_id == int(actor_user_id):
+                return fail('Kendi hesabınızı pasife alamazsınız')
+            if not is_active and row[3] == 'admin':
+                cur.execute(
+                    "SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = TRUE"
+                )
+                if int(cur.fetchone()[0] or 0) <= 1:
+                    return fail('Son aktif admin pasife alınamaz')
+
+            cur.execute(
+                "UPDATE users SET is_active = %s WHERE user_id = %s "
+                "RETURNING user_id, email, full_name, role, is_active, created_at, last_login, "
+                "height_cm, weight_kg, birth_year, city",
+                (bool(is_active), user_id),
+            )
+            updated = cur.fetchone()
+            conn.commit()
+            user = self._shape_user(updated)
+            return {'success': True, 'message': 'Kullanıcı durumu güncellendi', 'user': user, 'data': user}
+        except Exception as exc:
+            conn.rollback()
+            raise exc
+        finally:
+            cur.close()
+            conn.close()
+
     def _shape_user(self, row) -> Dict[str, Any]:
         """users satırını API yanıtına çevirir (şifre hash'i dahil edilmez)."""
         if len(row) >= 11:

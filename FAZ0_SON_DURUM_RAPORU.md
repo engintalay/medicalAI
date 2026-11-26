@@ -343,7 +343,7 @@ sudo systemctl status medical-ai
   `/api/conversations`, `/api/reminders`, `/api/notifications`,
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
-  `/admin/api/users`, `/admin/api/monitoring`, `/admin/api/uploads/stats`,
+  `/admin/api/users` (GET list, POST create, PATCH status), `/admin/api/monitoring`, `/admin/api/uploads/stats`,
   `/admin/api/health/*`, `/admin/api/research`, `/admin/api/rag/documents`,
   `/admin/api/rag/ingest`, `/admin/api/utils/secret/{key}`.
 - Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
@@ -379,8 +379,9 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 56 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
-  LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD).
+- Kabul/regresyon: 62 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+  LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
+  admin kullanıcı oluşturma ve aktiflik yönetimi).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -396,7 +397,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/monitoring` | Sistem izleme |
 | `/admin/config` | Sistem config (hot reload) |
 | `/admin/llm` | LLM ayarları |
-| `/admin/users` | Kullanıcı yönetimi |
+| `/admin/users` | Kullanıcı listesi + **yeni kullanıcı oluşturma** (admin/hasta) + aktif/pasif |
 | `/admin/storage` | Disk kullanımı |
 | `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
@@ -414,6 +415,13 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
 | `/patient/rag` | Kişisel bilgi tabanına metin ekleme |
 
+### Admin kullanıcı oluşturma kuralları
+- `POST /admin/api/users` yalnızca admin JWT'siyle çağrılabilir; `role=admin|patient`.
+- Şifre zorunlu (en az 8 karakter) ve **bcrypt** ile saklanır; yanıtta asla döndürülmez.
+- E-posta tekil ve geçerli olmalı; doğum yılı 1900–bugün aralığında doğrulanır.
+- `PATCH /admin/api/users/{id}` ile aktif/pasif yapılır; kendi hesabı ve **son aktif admin**
+  pasife alınamaz. Pasif kullanıcının girişi 401 döner.
+
 Hasta paneli ayrı JWT (`patient_token`) kullanır; admin token'ı hasta ekranlarında geçmez.
 Admin SPA'sındaki "Hasta Paneli ↗" ve hasta SPA'sındaki "Admin Paneli ↗" bağlantıları
 iki panel arasında geçişi sağlar. Ekranlar `admin.css` tasarım dilini kullanır; hasta
@@ -430,5 +438,8 @@ POST /api/user/metrics      201  → GET /api/user/dashboard 200
 POST /api/reminders         201  → GET /api/reminders 200
 GET /api/uploads            200 · GET /api/conversations 200
 GET /api/user/notification-preferences 200 · POST /api/rag/ingest 200
+POST /admin/api/users 201 → yeni hasta girişi 200
+PATCH /admin/api/users/{id} 200 → pasif giriş 401, tekrar aktif 200
+GET /admin/users 200
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

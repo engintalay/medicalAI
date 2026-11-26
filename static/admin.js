@@ -309,6 +309,15 @@
             const ragDeleteBtn = event.target.closest('[data-rag-delete]');
             if (ragDeleteBtn) {
                 deleteRagSource(ragDeleteBtn.getAttribute('data-rag-delete'));
+                return;
+            }
+
+            const userToggleBtn = event.target.closest('[data-user-toggle]');
+            if (userToggleBtn) {
+                toggleUserActive(
+                    Number(userToggleBtn.getAttribute('data-user-toggle')),
+                    userToggleBtn.getAttribute('data-user-active') === 'true'
+                );
             }
         });
 
@@ -321,6 +330,9 @@
             } else if (form.getAttribute('data-form') === 'rag') {
                 event.preventDefault();
                 saveRagDocument(form);
+            } else if (form.getAttribute('data-form') === 'admin-user') {
+                event.preventDefault();
+                createAdminUser(form);
             }
         });
 
@@ -586,7 +598,9 @@
             '</select>' +
             '<button type="button" class="btn btn-secondary btn-sm" id="userResetBtn">Sıfırla</button>' +
             '</div>' +
+            '<button type="button" class="btn btn-primary btn-sm" id="adminUserNewBtn">＋ Yeni Kullanıcı</button>' +
             '</div>' +
+            '<div id="adminUserFormBox" class="hidden"></div>' +
             '<div id="usersTable"></div>';
 
         const search = document.getElementById('userSearch');
@@ -617,8 +631,91 @@
                 loadUsers(1);
             });
         }
+        const newUserBtn = document.getElementById('adminUserNewBtn');
+        if (newUserBtn) {
+            newUserBtn.addEventListener('click', showAdminUserForm);
+        }
 
         await loadUsers(1);
+    }
+
+    function showAdminUserForm() {
+        const box = document.getElementById('adminUserFormBox');
+        if (!box) return;
+        box.classList.remove('hidden');
+        box.innerHTML =
+            '<form class="card" data-form="admin-user" id="adminUserForm" style="margin-bottom:20px">' +
+            '<div class="card-head"><div class="card-title">Yeni Kullanıcı</div>' +
+            '<button type="button" class="btn btn-secondary btn-sm" id="adminUserCancelBtn">Kapat</button></div>' +
+            '<div class="form-grid">' +
+            '<div class="field"><label class="label" for="newUserEmail">E-posta</label>' +
+            '<input class="input" id="newUserEmail" name="email" type="email" required></div>' +
+            '<div class="field"><label class="label" for="newUserPassword">Şifre</label>' +
+            '<input class="input" id="newUserPassword" name="password" type="password" minlength="8" required>' +
+            '<span class="hint">En az 8 karakter; bcrypt ile saklanır.</span></div>' +
+            '<div class="field"><label class="label" for="newUserFullName">Ad Soyad</label>' +
+            '<input class="input" id="newUserFullName" name="full_name" required></div>' +
+            '<div class="field"><label class="label" for="newUserRole">Rol</label>' +
+            '<select class="select" id="newUserRole" name="role">' +
+            '<option value="patient">Hasta</option><option value="admin">Admin</option></select></div>' +
+            '<div class="field"><label class="label" for="newUserCity">Şehir (isteğe bağlı)</label>' +
+            '<input class="input" id="newUserCity" name="city"></div>' +
+            '<div class="field"><label class="label" for="newUserHeight">Boy / cm (isteğe bağlı)</label>' +
+            '<input class="input" id="newUserHeight" name="height_cm" type="number" step="0.1"></div>' +
+            '<div class="field"><label class="label" for="newUserWeight">Kilo / kg (isteğe bağlı)</label>' +
+            '<input class="input" id="newUserWeight" name="weight_kg" type="number" step="0.1"></div>' +
+            '<div class="field"><label class="label" for="newUserBirth">Doğum yılı (isteğe bağlı)</label>' +
+            '<input class="input" id="newUserBirth" name="birth_year" type="number" min="1900"></div>' +
+            '</div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Kullanıcıyı oluştur</button></div>' +
+            '</form>';
+        const cancel = document.getElementById('adminUserCancelBtn');
+        if (cancel) {
+            cancel.addEventListener('click', function () {
+                box.classList.add('hidden');
+                box.innerHTML = '';
+            });
+        }
+        document.getElementById('newUserEmail').focus();
+    }
+
+    async function createAdminUser(form) {
+        const payload = {
+            email: form.elements.email.value.trim(),
+            password: form.elements.password.value,
+            full_name: form.elements.full_name.value.trim(),
+            role: form.elements.role.value,
+            city: form.elements.city.value.trim()
+        };
+        ['height_cm', 'weight_kg', 'birth_year'].forEach(function (key) {
+            const raw = form.elements[key].value;
+            if (raw !== '') payload[key] = Number(raw);
+        });
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/users', { method: 'POST', body: payload });
+            showToast('Kullanıcı oluşturuldu: ' + (response.data && response.data.email || ''), 'success');
+            await navigate('/admin/users', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function toggleUserActive(userId, isActive) {
+        try {
+            await api('/users/' + encodeURIComponent(userId), {
+                method: 'PATCH',
+                body: { is_active: isActive }
+            });
+            showToast(isActive ? 'Kullanıcı aktifleştirildi.' : 'Kullanıcı pasife alındı.', 'success');
+            await navigate('/admin/users', { push: false });
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
     }
 
     async function loadUsers(page) {
@@ -659,7 +756,15 @@
                     : '<span class="badge badge-warning"><span class="dot"></span>Pasif</span>') + '</td>' +
                 '<td>' + formatDateTime(user.created_at) + '</td>' +
                 '<td>' + formatDateTime(user.last_login) + '</td>' +
-                '</tr>';
+                '<td class="actions-cell">' +
+                (state.user && Number(state.user.user_id) === Number(user.user_id)
+                    ? '<span class="hint">Kendiniz</span>'
+                    : '<button type="button" class="btn btn-sm ' +
+                      (user.is_active ? 'btn-danger' : 'btn-secondary') +
+                      '" data-user-toggle="' + user.user_id + '" data-user-active="' +
+                      (user.is_active ? 'false' : 'true') + '">' +
+                      (user.is_active ? 'Pasife al' : 'Aktifleştir') + '</button>') +
+                '</td></tr>';
         }).join('');
 
         const total = pagination.total || 0;
@@ -680,8 +785,8 @@
         container.innerHTML =
             '<div class="table-wrap"><table class="table">' +
             '<thead><tr><th>ID</th><th>E-posta</th><th>Ad Soyad</th><th>Rol</th>' +
-            '<th>Durum</th><th>Kayıt</th><th>Son Giriş</th></tr></thead>' +
-            '<tbody>' + (rows || '<tr><td colspan="7" class="empty">Kullanıcı bulunamadı.</td></tr>') +
+            '<th>Durum</th><th>Kayıt</th><th>Son Giriş</th><th></th></tr></thead>' +
+            '<tbody>' + (rows || '<tr><td colspan="8" class="empty">Kullanıcı bulunamadı.</td></tr>') +
             '</tbody></table></div>' +
             '<div class="table-foot">Toplam ' + formatNumber(total) + ' kullanıcı · Sayfa ' +
             esc(current) + ' / ' + esc(totalPages) + '</div>' +
