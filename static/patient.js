@@ -1377,7 +1377,7 @@
         const colors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899',
                         '#06b6d4', '#84cc16', '#f97316', '#6366f1'];
         const width = 900, height = 360;
-        const margin = { top: 20, right: 24, bottom: 54, left: 54 };
+        const margin = { top: 20, right: series.length === 2 ? 86 : 24, bottom: 54, left: 54 };
         const plotWidth = width - margin.left - margin.right;
         const plotHeight = height - margin.top - margin.bottom;
         const allTimes = [];
@@ -1391,10 +1391,40 @@
         const x = function (time) { return margin.left + ((time - minTime) / (maxTime - minTime)) * plotWidth; };
         let svg = '<svg class="metrics-chart-svg" viewBox="0 0 ' + width + ' ' + height + '" ' +
             'role="img" aria-label="Seçili metriklerin ölçüm tarihine göre grafiği">';
+        function drawValueAxis(item, side, color) {
+            const values = item.points.map(function (point) { return point.value; });
+            let min = Math.min.apply(null, values);
+            let max = Math.max.apply(null, values);
+            if (min === max) {
+                min -= 1;
+                max += 1;
+            }
+            for (let index = 0; index <= 4; index += 1) {
+                const y = margin.top + (plotHeight * index) / 4;
+                const value = max - ((max - min) * index) / 4;
+                const xPos = side === 'left' ? margin.left - 10 : width - margin.right + 10;
+                const anchor = side === 'left' ? 'end' : 'start';
+                svg += '<text x="' + xPos + '" y="' + (y + 4) + '" text-anchor="' + anchor +
+                    '" fill="' + color + '" class="chart-axis-label">' +
+                    esc(formatNumber(value, value < 10 ? 1 : 0)) + '</text>';
+            }
+        }
         for (let index = 0; index <= 4; index += 1) {
             const y = margin.top + (plotHeight * index) / 4;
             svg += '<line x1="' + margin.left + '" y1="' + y + '" x2="' + (width - margin.right) +
                 '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"/>';
+        }
+        if (series.length > 2) {
+            for (let index = 0; index <= 4; index += 1) {
+                const y = margin.top + (plotHeight * index) / 4;
+                svg += '<text x="' + (margin.left - 10) + '" y="' + (y + 4) + '" text-anchor="end" ' +
+                    'class="chart-axis-label">' + (100 - index * 25) + '%</text>';
+            }
+        } else if (series.length === 1) {
+            drawValueAxis(series[0], 'left', colors[0]);
+        } else {
+            drawValueAxis(series[0], 'left', colors[0]);
+            drawValueAxis(series[1], 'right', colors[1]);
         }
         for (let index = 0; index <= 4; index += 1) {
             const time = minTime + ((maxTime - minTime) * index) / 4;
@@ -1451,8 +1481,8 @@
         container.innerHTML = svg + '<div class="chart-tooltip hidden" id="metricsChartTooltip"></div>' +
             '<div class="chart-detail" id="metricsChartDetail">' + esc(defaultDetail) + '</div>' +
             '<div class="chart-legend">' + legend.join('') + '</div>' +
-            '<div class="card-note">Tek/iki değerli serilerde gerçek değerler noktaların yanında gösterilir. ' +
-            'Tüm gerçek değerler legend, nokta etiketleri ve detay panelinde bulunur; yüzde ekseni gösterilmez.</div>';
+            '<div class="card-note">Tek metrikte solda gerçek değer ekseni; iki metrikte solda/sağda renkli gerçek değer eksenleri ' +
+            'gösterilir. İkiden fazla metrikte yüzde eksenine dönülür. Nokta detayları legend ve panelde yer alır.</div>';
 
         const tooltip = document.getElementById('metricsChartTooltip');
         function showTooltip(event, circle) {
