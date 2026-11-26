@@ -483,3 +483,10 @@ POST /api/uploads/{id}/extract 200 → listede extracted_text/extracted_at kalı
 İki dosya seçili silme API akışı 200 → kalan dosya 0
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.
+
+## 8. Referanslar
+
+- Google MedGemma Release koleksiyonu:
+  <https://huggingface.co/collections/google/medgemma-release>
+- İlaç prospektüsü kaynağı: <https://prospektus.co/>
+- Proje giriş dokümanı: `README.md`
