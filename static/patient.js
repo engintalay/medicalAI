@@ -664,7 +664,7 @@
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Sohbeti</h2>' +
-            '<p class="page-sub">RAG destekli yanıtlar; kaynaklar her yanıtın altında gösterilir.</p></div>' +
+            '<p class="page-sub">RAG destekli yanıtlar; kaynaklar her yanıtın altında gösterilir. Dosyayı sohbet alanına sürükleyebilirsin.</p></div>' +
             '<div class="chat-layout">' +
             '<div class="chat-sidebar"><div class="chat-sidebar-head">' +
             '<button type="button" class="btn btn-primary btn-sm" id="newChatBtn">＋ Yeni sohbet</button>' +
@@ -684,6 +684,34 @@
 
         renderConversationList();
         renderMessages();
+        setupChatDropzone();
+    }
+
+    function setupChatDropzone() {
+        const zone = document.querySelector('.chat-main');
+        if (!zone) return;
+        let depth = 0;
+        zone.addEventListener('dragenter', function (event) {
+            event.preventDefault();
+            depth += 1;
+            zone.classList.add('dragover');
+        });
+        zone.addEventListener('dragover', function (event) {
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        });
+        zone.addEventListener('dragleave', function (event) {
+            event.preventDefault();
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) zone.classList.remove('dragover');
+        });
+        zone.addEventListener('drop', function (event) {
+            event.preventDefault();
+            depth = 0;
+            zone.classList.remove('dragover');
+            const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+            if (file) uploadChatFile(file);
+        });
     }
 
     async function openConversation(id) {

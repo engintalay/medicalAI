@@ -432,8 +432,8 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
   pasife alınamaz. Pasif kullanıcının girişi 401 döner.
 
 Hasta paneli ayrı JWT (`patient_token`) kullanır; admin token'ı hasta ekranlarında geçmez.
-Sohbet ekranında dosya seçildiğinde yükleme tamamlanır tamamlanmaz analiz otomatik başlar;
-kullanıcının ayrıca “Gönder”e basması gerekmez.
+Sohbet ekranında dosya seçildiğinde veya sohbet alanına sürüklendiğinde yükleme tamamlanır
+tamamlanmaz analiz otomatik başlar; kullanıcının ayrıca “Gönder”e basması gerekmez.
 Admin SPA'sındaki "Hasta Paneli ↗" ve hasta SPA'sındaki "Admin Paneli ↗" bağlantıları
 iki panel arasında geçişi sağlar. Ekranlar `admin.css` tasarım dilini kullanır; hasta
 ekranlarına özel kurallar `static/patient.css` içindedir.

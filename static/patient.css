@@ -44,6 +44,15 @@ body { background: #f8fafc; }
     border-radius: var(--radius); box-shadow: var(--shadow-sm);
     display: flex; flex-direction: column; min-height: 0; overflow: hidden;
 }
+.chat-main { position: relative; transition: border-color .15s ease, box-shadow .15s ease; }
+.chat-main.dragover { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, .18); }
+.chat-main.dragover::after {
+    content: "📎 Dosyayı buraya bırak";
+    position: absolute; inset: 0; z-index: 10; pointer-events: none;
+    display: grid; place-items: center;
+    background: rgba(239, 246, 255, .92); color: #1d4ed8;
+    font-size: 18px; font-weight: 700;
+}
 .chat-sidebar-head {
     padding: 14px; border-bottom: 1px solid var(--border);
     display: flex; flex-direction: column; gap: 10px;
