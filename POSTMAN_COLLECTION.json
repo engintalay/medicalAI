@@ -1824,6 +1824,207 @@
         "description": "Hasta: yalnızca kendi sağlık metriğini sil"
       },
       "response": []
+    },
+    {
+      "name": "GET /admin/api/rag/drug-search",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/drug-search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "drug-search"
+          ]
+        },
+        "description": "Admin: prospektus.co ilaç ara"
+      },
+      "response": []
+    },
+    {
+      "name": "POST /admin/api/rag/import-url",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/import-url",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "import-url"
+          ]
+        },
+        "description": "Admin: public RAG ilaç URL içe aktar",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source\": \"prospektus:majezik\",\n  \"url\": \"https://prospektus.co/ilaclar/majezik-100-mg-15-film-tablet\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /admin/api/rag/upload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/admin/api/rag/upload",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "admin",
+            "api",
+            "rag",
+            "upload"
+          ]
+        },
+        "description": "Admin: public RAG PDF/TXT yükle",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "source",
+              "value": "prospektus:majezik",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "GET /api/rag/drug-search",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rag/drug-search",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "rag",
+            "drug-search"
+          ]
+        },
+        "description": "Hasta: prospektus.co ilaç ara"
+      },
+      "response": []
+    },
+    {
+      "name": "POST /api/rag/import-url",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rag/import-url",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "rag",
+            "import-url"
+          ]
+        },
+        "description": "Hasta: kişisel RAG ilaç URL içe aktar",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source\": \"prospektus:majezik\",\n  \"url\": \"https://prospektus.co/ilaclar/majezik-100-mg-15-film-tablet\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /api/rag/upload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{patientToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/rag/upload",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "rag",
+            "upload"
+          ]
+        },
+        "description": "Hasta: kişisel RAG PDF/TXT yükle",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "source",
+              "value": "prospektus:majezik",
+              "type": "text"
+            },
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            }
+          ]
+        }
+      },
+      "response": []
     }
   ]
 }

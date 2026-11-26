@@ -10,3 +10,4 @@ python-multipart # Form-data login için
 psutil # Monitoring endpoint
 sentence-transformers # RAG için gerekecek
 reportlab # Hasta veri export (PDF)
+beautifulsoup4 # İlaç/prospektüs URL içerik ayrıştırma

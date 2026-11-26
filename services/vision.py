@@ -112,13 +112,22 @@ def _max_bytes() -> int:
 
 
 def _pdf_streams(data: bytes):
-    """PDF stream bloklarını (gerekirse FlateDecode açılmış) üretir."""
-    for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
-        chunk = match.group(1)
-        try:
-            yield zlib.decompress(chunk)
-        except zlib.error:
-            yield chunk
+    """PDF stream bloklarını (ASCII85/Flate gerekirse açılmış) üretir."""
+    for match in re.finditer(rb"stream\r?\n(.*?)endstream", data, re.S):
+        chunk = match.group(1).strip()
+        candidates = [chunk]
+        if chunk.endswith(b"~>"):
+            try:
+                candidates.insert(0, base64.a85decode(chunk, adobe=True))
+            except ValueError:
+                pass
+        for candidate in candidates:
+            try:
+                yield zlib.decompress(candidate)
+                break
+            except zlib.error:
+                if candidate is candidates[-1]:
+                    yield candidate
 
 
 def _unescape_pdf_string(raw: bytes) -> str:
@@ -288,23 +297,16 @@ def _resolve_config(api_key: str | None):
     }
 
 
-def _extract_sync(upload_id: int, user_id: int, api_key: str | None, prompt: str | None):
+def extract_text_from_data(
+    data: bytes,
+    mime: str,
+    prompt: str | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Dosya baytlarından metin çıkarır; DB/user_uploads bağımlılığı yoktur."""
     settings = _resolve_config(api_key)
-    path, mime, _original_name = _load_upload(upload_id, user_id)
-
-    file_path = Path(path)
-    try:
-        data = file_path.read_bytes()
-    except OSError:
-        # Dosya yolu hata mesajına yazılmaz.
-        raise VisionError("Dosya okunamadı.", 404)
-
-    if len(data) > _max_bytes():
-        raise VisionError("Dosya boyutu görsel okuma sınırını aşıyor.")
-
     mime = (mime or "").split(";")[0].strip().lower()
     if mime == "text/plain":
-        # Metin dosyasında vision gerekmez; içerik doğrudan döner.
         try:
             text = data.decode("utf-8")
         except UnicodeDecodeError:
@@ -314,8 +316,6 @@ def _extract_sync(upload_id: int, user_id: int, api_key: str | None, prompt: str
     if mime not in ("application/pdf", "image/jpeg", "image/png", "image/webp"):
         raise VisionError("Bu dosya tipi görsel okuma için desteklenmiyor.")
 
-    # Metin tabanlı PDF'leri LLM'e gerek kalmadan okur; taranan PDF'lerde
-    # aşağıdaki vision LLM yoluna devam edilir.
     if mime == "application/pdf":
         local = _extract_pdf_text(data)
         if local:
@@ -348,6 +348,21 @@ def _extract_sync(upload_id: int, user_id: int, api_key: str | None, prompt: str
         "source": settings["source"],
         "model_used": True,
     }
+
+
+def _extract_sync(upload_id: int, user_id: int, api_key: str | None, prompt: str | None):
+    path, mime, _original_name = _load_upload(upload_id, user_id)
+
+    file_path = Path(path)
+    try:
+        data = file_path.read_bytes()
+    except OSError:
+        # Dosya yolu hata mesajına yazılmaz.
+        raise VisionError("Dosya okunamadı.", 404)
+
+    if len(data) > _max_bytes():
+        raise VisionError("Dosya boyutu görsel okuma sınırını aşıyor.")
+    return extract_text_from_data(data, mime, prompt=prompt, api_key=api_key)
 
 
 async def extract_text(

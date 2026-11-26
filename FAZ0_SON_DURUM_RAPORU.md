@@ -339,13 +339,15 @@ sudo systemctl status medical-ai
 ## 3. API özeti
 
 - Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (POST, DELETE),
-  `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/chat` (opsiyonel dosya),
+  `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/rag/upload`,
+  `/api/rag/import-url`, `/api/rag/drug-search`, `/api/chat` (opsiyonel dosya),
   `/api/conversations`, `/api/reminders`, `/api/notifications`,
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
   `/admin/api/users` (GET list, POST create, PATCH status), `/admin/api/monitoring`, `/admin/api/uploads/stats`,
   `/admin/api/health/*`, `/admin/api/research`, `/admin/api/rag/documents`,
-  `/admin/api/rag/ingest`, `/admin/api/utils/secret/{key}`.
+  `/admin/api/rag/ingest`, `/admin/api/rag/upload`, `/admin/api/rag/import-url`,
+  `/admin/api/rag/drug-search`, `/admin/api/utils/secret/{key}`.
 - Swagger: `/docs` · OpenAPI: `/openapi.json` · Postman: `POSTMAN_COLLECTION.json`.
 
 ## 4. Operasyon prosedürleri
@@ -386,16 +388,19 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 - `health_metrics.recorded_at` kullanıcının girdiği **ölçüm tarihi**,
   `created_at` ise **sisteme giriş zamanıdır**; listeleme/sıralama/istatistikler ölçüm tarihine göre yapılır.
 - Public research kayıtları RAG'da `user_id = NULL` ile tutulur; hasta verisiyle karışmaz.
+- URL içe aktarma yalnızca `prospektus.co` / `www.prospektus.co` kabul eder;
+  yönlendirmeler de doğrulanır, HTML 2 MB ile sınırlandırılır.
 
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 73 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 80 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
   hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler,
-  ölçüm tarihi ve sistem giriş zamanının ayrı saklanması).
+  ölçüm tarihi ve sistem giriş zamanının ayrı saklanması, RAG PDF/TXT yükleme,
+  prospektus.co ilaç arama ve URL içe aktarma).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -416,7 +421,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/health` | Sağlık metrikleri (kullanıcı seçimi) |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
 | `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
-| `/admin/rag` | Public RAG bilgi tabanı: ekleme, listeleme, silme |
+| `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **ilaç arama/seçim**, listeleme, silme |
 
 ### Hasta ekranları (`/patient/...`)
 | Adres | Ekran |
@@ -427,7 +432,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
 | `/patient/profile` | Hasta profilini görüntüleme/güncelleme |
-| `/patient/rag` | Kişisel bilgi tabanına metin ekleme |
+| `/patient/rag` | Kişisel bilgi tabanına metin, **PDF/TXT**, ilaç URL’si veya arama/seçim ekleme |
 
 ### Admin kullanıcı oluşturma kuralları
 - `POST /admin/api/users` yalnızca admin JWT'siyle çağrılabilir; `role=admin|patient`.
@@ -463,5 +468,8 @@ POST /api/chat 200 (medgemma, tek system mesajı, 56.9 sn)
 POST /api/uploads 200 → POST /api/chat upload_id ile 200 (görsel okuma + metin yanıtı)
 Örnek tansiyon görseli: 128/82 mmHg, 74 bpm → 3 metrik kaydedildi; toplam 117.4 sn
 Paralel test: sohbet beklerken /health 200 (maks 0.14 sn), dashboard 200 (~0.2 sn)
+GET /admin/api/rag/drug-search?q=majezik 200 (19 sonuç)
+POST /admin/api/rag/import-url 200 (Majezik sayfası → 12 parça)
+POST /admin/api/rag/upload PDF 200 (ASCII85/Flate PDF yerel okundu → 1 parça)
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

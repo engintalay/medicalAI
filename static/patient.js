@@ -439,6 +439,15 @@
             const uploadExtract = event.target.closest('[data-upload-extract]');
             if (uploadExtract) {
                 extractUpload(Number(uploadExtract.getAttribute('data-upload-extract')));
+                return;
+            }
+
+            const drugImportBtn = event.target.closest('[data-drug-import]');
+            if (drugImportBtn) {
+                importPatientDrugUrl(
+                    drugImportBtn.getAttribute('data-drug-url'),
+                    drugImportBtn.getAttribute('data-drug-title')
+                );
             }
         });
 
@@ -467,6 +476,15 @@
             } else if (name === 'rag') {
                 event.preventDefault();
                 ingestPatientRag(form);
+            } else if (name === 'rag-file') {
+                event.preventDefault();
+                savePatientRagFile(form);
+            } else if (name === 'rag-url') {
+                event.preventDefault();
+                savePatientRagUrl(form);
+            } else if (name === 'drug-search') {
+                event.preventDefault();
+                searchDrugsPatient(form);
             } else if (name === 'chat') {
                 event.preventDefault();
                 sendChat(form);
@@ -1359,7 +1377,29 @@
             '</div><div class="field" style="margin-top:16px"><label class="label" for="patientRagText">Metin</label>' +
             '<textarea class="input" id="patientRagText" name="text" required placeholder="Eklenacak metin"></textarea></div>' +
             '<div class="form-actions"><button type="submit" class="btn btn-primary">Bilgi tabanına ekle</button></div>' +
-            '</form><div id="ragResult"></div>';
+            '</form><div id="ragResult"></div>' +
+            '<div class="cards-grid" style="margin-top:16px">' +
+            '<form class="card" data-form="rag-file" id="patientRagFileForm">' +
+            '<div class="card-title" style="margin-bottom:14px">PDF / TXT yükle</div>' +
+            '<div class="field"><label class="label" for="patientRagFileSource">Kaynak adı</label>' +
+            '<input class="input" id="patientRagFileSource" name="source" required placeholder="Örn. prospektus:majezik"></div>' +
+            '<div class="field" style="margin-top:12px"><label class="label" for="patientRagFile">Dosya</label>' +
+            '<input class="input" id="patientRagFile" name="file" type="file" accept="application/pdf,text/plain" required></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Yükle ve ekle</button></div></form>' +
+            '<form class="card" data-form="rag-url" id="patientRagUrlForm">' +
+            '<div class="card-title" style="margin-bottom:14px">İlaç URL\'si içe aktar</div>' +
+            '<div class="field"><label class="label" for="patientRagUrlSource">Kaynak adı</label>' +
+            '<input class="input" id="patientRagUrlSource" name="source" required placeholder="Örn. prospektus:majezik"></div>' +
+            '<div class="field" style="margin-top:12px"><label class="label" for="patientRagUrl">Prospektüs URL</label>' +
+            '<input class="input" id="patientRagUrl" name="url" type="url" required placeholder="https://prospektus.co/ilaclar/..."></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-primary">Çek ve ekle</button></div></form>' +
+            '<form class="card" data-form="drug-search" id="patientDrugSearchForm">' +
+            '<div class="card-title" style="margin-bottom:14px">İlaç ara ve seç</div>' +
+            '<div class="field"><label class="label" for="patientDrugQuery">İlaç adı</label>' +
+            '<input class="input" id="patientDrugQuery" name="q" required placeholder="Örn. Majezik"></div>' +
+            '<div class="form-actions"><button type="submit" class="btn btn-secondary">Ara</button></div>' +
+            '<div id="patientDrugResults" class="status-list" style="margin-top:14px"></div></form>' +
+            '</div>';
     }
 
     async function ingestPatientRag(form) {
@@ -1386,6 +1426,74 @@
             showToast(error.message, 'error');
         } finally {
             if (button) button.disabled = false;
+        }
+    }
+
+    async function savePatientRagFile(form) {
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/api/rag/upload', { method: 'POST', body: new FormData(form) });
+            const info = response.data || {};
+            showToast(formatNumber(info.chunks) + ' parça eklendi · ' + esc(info.filename || 'dosya'), 'success');
+            form.reset();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function savePatientRagUrl(form) {
+        const payload = { source: form.elements.source.value.trim(), url: form.elements.url.value.trim() };
+        const button = form.querySelector('button[type="submit"]');
+        if (button) button.disabled = true;
+        try {
+            const response = await api('/api/rag/import-url', { method: 'POST', body: payload });
+            const info = response.data || {};
+            showToast(formatNumber(info.chunks) + ' parça eklendi · ' + esc(info.title || 'URL'), 'success');
+            form.reset();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        } finally {
+            if (button) button.disabled = false;
+        }
+    }
+
+    async function searchDrugsPatient(form) {
+        const query = form.elements.q.value.trim();
+        const box = document.getElementById('patientDrugResults');
+        if (!box) return;
+        box.innerHTML = loadingHTML('İlaçlar aranıyor...');
+        try {
+            const response = await api('/api/rag/drug-search?q=' + encodeURIComponent(query));
+            const items = response.data || [];
+            box.innerHTML = items.length ? items.map(function (item) {
+                return '<div class="status-row" style="align-items:flex-start">' +
+                    '<div><div class="status-label">' + esc(item.title) + '</div>' +
+                    '<div class="status-hint">' + esc(item.url) + '</div></div>' +
+                    '<button type="button" class="btn btn-primary btn-sm" data-drug-import="' +
+                    esc(item.url) + '" data-drug-title="' + esc(item.title) + '">Ekle</button></div>';
+            }).join('') : '<div class="empty" style="padding:16px">Sonuç bulunamadı.</div>';
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            box.innerHTML = '<div class="alert alert-error show">' + esc(error.message) + '</div>';
+        }
+    }
+
+    async function importPatientDrugUrl(url, title) {
+        const slug = String(url || '').split('/').filter(Boolean).pop() || 'ilac';
+        try {
+            const response = await api('/api/rag/import-url', {
+                method: 'POST', body: { source: 'prospektus:' + slug, url: url }
+            });
+            const info = response.data || {};
+            showToast((title || 'İlaç') + ' eklendi · ' + formatNumber(info.chunks) + ' parça', 'success');
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
         }
     }
 
