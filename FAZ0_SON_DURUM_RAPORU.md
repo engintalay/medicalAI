@@ -437,7 +437,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | `/admin/health` | Kullanıcı metriklerini görüntüleme/**düzenleme**/ekleme/silme + **metrik tanımı kataloğu yönetimi ve isim düzenleme** |
 | `/admin/db-config` | PostgreSQL / Redis ayarları ve bağlantı testi |
 | `/admin/research` | Araştırma/içerik CRUD (kaydetme otomatik RAG yükler) |
-| `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **içerik görüntüleme/düzenleme/yeniden indexleme**, ilaç arama/seçim, listeleme, silme |
+| `/admin/rag` | Public RAG: metin, **PDF/TXT yükleme**, ilaç URL’si içe aktarma, **içerik görüntüleme/düzenleme/yeniden indexleme**, ilaç arama/seçim, **çoklu seçim/toplu silme** |
 
 ### Hasta ekranları (`/patient/...`)
 | Adres | Ekran |

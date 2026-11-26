@@ -29,6 +29,8 @@
         healthMetrics: [],
         healthEditingId: null,
         healthDefinitionEditingId: null,
+        ragSources: [],
+        ragSelected: new Set(),
         toastTimer: null
     };
 
@@ -325,6 +327,33 @@
             const researchNewBtn = event.target.closest('#researchNewBtn');
             if (researchNewBtn) {
                 resetResearchForm();
+                return;
+            }
+
+            const ragSelect = event.target.closest('[data-rag-select]');
+            if (ragSelect) {
+                const source = ragSelect.getAttribute('data-rag-select');
+                if (ragSelect.checked) state.ragSelected.add(source);
+                else state.ragSelected.delete(source);
+                updateRagSelectionUI();
+                return;
+            }
+
+            if (event.target.closest('#ragSelectAll')) {
+                const checked = document.getElementById('ragSelectAll').checked;
+                state.ragSources.forEach(function (item) {
+                    if (checked) state.ragSelected.add(item.source);
+                    else state.ragSelected.delete(item.source);
+                });
+                document.querySelectorAll('[data-rag-select]').forEach(function (input) {
+                    input.checked = checked;
+                });
+                updateRagSelectionUI();
+                return;
+            }
+
+            if (event.target.closest('#deleteSelectedRagBtn')) {
+                deleteSelectedRagSources();
                 return;
             }
 
@@ -2338,8 +2367,12 @@
     async function renderRagAdmin() {
         const response = await api('/rag/documents');
         const items = response.data || [];
+        state.ragSources = items;
+        state.ragSelected = new Set();
         const rows = items.length ? items.map(function (item) {
             return '<tr>' +
+                '<td><input type="checkbox" data-rag-select="' + esc(item.source) + '"' +
+                (state.ragSelected.has(item.source) ? ' checked' : '') + ' aria-label="RAG kaynağını seç"></td>' +
                 '<td><span class="mono">' + esc(item.source) + '</span></td>' +
                 '<td>' + formatNumber(item.chunks) + '</td>' +
                 '<td>' + formatNumber(item.public_chunks) + '</td>' +
@@ -2349,7 +2382,7 @@
                 '<button type="button" class="btn btn-danger btn-sm" ' +
                 'data-rag-delete="' + esc(item.source) + '">Sil</button></td>' +
                 '</tr>';
-        }).join('') : '<tr><td colspan="5" class="empty">Henüz RAG içeriği yok.</td></tr>';
+        }).join('') : '<tr><td colspan="6" class="empty">Henüz RAG içeriği yok.</td></tr>';
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">RAG Bilgi Tabanı</h2>' +
@@ -2403,8 +2436,12 @@
             '<button type="button" class="btn btn-secondary" id="ragEditorReindexBtn">Sadece yeniden indexle</button></div></div>' +
             '<div class="section-head"><div class="section-title">Kaynaklar</div>' +
             '<span class="hint">' + formatNumber(items.length) + ' kaynak</span></div>' +
+            '<div class="toolbar"><div class="toolbar-group">' +
+            '<label class="inline-check"><input type="checkbox" id="ragSelectAll"> Tümünü seç</label>' +
+            '<button type="button" class="btn btn-danger btn-sm" id="deleteSelectedRagBtn" disabled>Seçilenleri sil (0)</button>' +
+            '</div></div>' +
             '<div class="table-wrap"><table class="table"><thead><tr>' +
-            '<th>Kaynak</th><th>Parça</th><th>Public parça</th><th>Oluşturulma</th><th></th>' +
+            '<th></th><th>Kaynak</th><th>Parça</th><th>Public parça</th><th>Oluşturulma</th><th></th>' +
             '</tr></thead><tbody>' + rows + '</tbody></table></div>';
     }
 
@@ -2578,6 +2615,43 @@
         } finally {
             if (button) button.disabled = false;
         }
+    }
+
+    function updateRagSelectionUI() {
+        const selectAll = document.getElementById('ragSelectAll');
+        if (selectAll) {
+            selectAll.checked = state.ragSources.length > 0 &&
+                state.ragSelected.size === state.ragSources.length;
+            selectAll.indeterminate = state.ragSelected.size > 0 &&
+                state.ragSelected.size < state.ragSources.length;
+        }
+        const button = document.getElementById('deleteSelectedRagBtn');
+        if (button) {
+            button.disabled = state.ragSelected.size === 0;
+            button.textContent = 'Seçilenleri sil (' + state.ragSelected.size + ')';
+        }
+    }
+
+    async function deleteSelectedRagSources() {
+        const sources = Array.from(state.ragSelected);
+        if (!sources.length) return;
+        if (!await MedicalDialog.confirm(sources.length + ' RAG kaynağı ve tüm parçaları silinsin mi?', {
+            title: 'Seçilen RAG kaynaklarını sil', confirmText: 'Tümünü sil', cancelText: 'Vazgeç'
+        })) return;
+        const button = document.getElementById('deleteSelectedRagBtn');
+        if (button) button.disabled = true;
+        let deleted = 0;
+        for (const source of sources) {
+            try {
+                await api('/rag/documents/' + encodeURIComponent(source), { method: 'DELETE' });
+                deleted += 1;
+            } catch (error) {
+                if (error instanceof AuthError) return;
+                showToast(error.message, 'error');
+            }
+        }
+        showToast(deleted + ' RAG kaynağı silindi.', deleted === sources.length ? 'success' : 'error');
+        await navigate('/admin/rag', { push: false });
     }
 
     async function deleteRagSource(source) {
