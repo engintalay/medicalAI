@@ -148,8 +148,18 @@ def main() -> int:
             conversation_id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             title VARCHAR(200),
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+            archived_at TIMESTAMP WITH TIME ZONE
         );
+    """)
+    cur.execute("""
+        ALTER TABLE conversations
+        ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE
+    """)
+    cur.execute("""
+        ALTER TABLE conversations
+        ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS conversation_messages (

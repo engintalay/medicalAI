@@ -369,6 +369,21 @@
                 return;
             }
 
+            const convArchive = event.target.closest('[data-conv-archive]');
+            if (convArchive) {
+                archiveConversation(
+                    Number(convArchive.getAttribute('data-conv-archive')),
+                    convArchive.getAttribute('data-archived') !== 'true'
+                );
+                return;
+            }
+
+            const convDelete = event.target.closest('[data-conv-delete]');
+            if (convDelete) {
+                deleteConversation(Number(convDelete.getAttribute('data-conv-delete')));
+                return;
+            }
+
             const newChatBtn = event.target.closest('#newChatBtn');
             if (newChatBtn) {
                 newConversation();
@@ -698,28 +713,39 @@
         if (!list) return;
         const items = state.chat.conversations;
         list.innerHTML = items.length ? items.map(function (item) {
-            return '<button type="button" class="conv-item' +
-                (state.chat.activeId === item.id ? ' active' : '') + '" data-conv="' + item.id + '">' +
+            const archived = !!item.is_archived;
+            return '<div class="conv-wrap' + (state.chat.activeId === item.id ? ' active' : '') + '">' +
+                '<button type="button" class="conv-item" data-conv="' + item.id + '">' +
                 '<div class="conv-title">' + esc(item.title || 'Sohbet ' + item.id) + '</div>' +
-                '<div class="conv-date">' + formatDateTime(item.created_at) + '</div></button>';
-        }).join('') : '<div class="empty" style="padding:20px 12px">Henüz sohbet yok.</div>';
+                '<div class="conv-date">' + formatDateTime(item.created_at) +
+                (archived ? ' · Arşivlendi' : '') + '</div></button>' +
+                '<div class="conv-actions">' +
+                '<button type="button" class="btn btn-secondary btn-sm" data-conv-archive="' + item.id +
+                '" data-archived="' + (archived ? 'true' : 'false') + '">' +
+                (archived ? 'Geri yükle' : 'Arşivle') + '</button>' +
+                '<button type="button" class="btn btn-danger btn-sm" data-conv-delete="' + item.id + '">Sil</button>' +
+                '</div></div>';
+        }).join('') : '<div class="empty" style="padding:20px 12px">Sohbet bulunamadı.</div>';
     }
 
     async function renderChat() {
-        const response = await api('/api/conversations');
-        state.chat.conversations = response.data || [];
         state.chat.activeId = null;
         state.chat.messages = [];
         state.chat.upload = null;
 
         contentArea.innerHTML =
             '<div class="page-head"><h2 class="page-title">Sağlık Sohbeti</h2>' +
-            '<p class="page-sub">RAG destekli yanıtlar; kaynaklar her yanıtın altında gösterilir. Dosyayı sohbet alanına sürükleyebilirsin.</p></div>' +
+            '<p class="page-sub">Sohbetlerde arama yapın; arşivleyin veya silin. Dosyayı sohbet alanına sürükleyebilirsin.</p></div>' +
             '<div class="chat-layout">' +
             '<div class="chat-sidebar"><div class="chat-sidebar-head">' +
+            '<input type="search" class="input" id="conversationSearch" placeholder="Sohbetlerde ara...">' +
+            '<select class="select" id="conversationFilter">' +
+            '<option value="active">Aktif sohbetler</option>' +
+            '<option value="archived">Arşivlenmişler</option>' +
+            '<option value="all">Tüm sohbetler</option></select>' +
             '<button type="button" class="btn btn-primary btn-sm" id="newChatBtn">＋ Yeni sohbet</button>' +
-            '<span class="hint">' + formatNumber(state.chat.conversations.length) + ' konuşma</span></div>' +
-            '<div class="conv-list" id="conversationList"></div></div>' +
+            '<span class="hint" id="conversationCount"></span></div>' +
+            '<div class="conv-list" id="conversationList">' + loadingHTML('Sohbetler yükleniyor...') + '</div></div>' +
             '<div class="chat-main">' +
             '<div class="chat-head"><span class="card-title">Sohbet</span>' +
             '<span class="hint">Yanıtlar tanı değildir</span></div>' +
@@ -732,9 +758,38 @@
             '<button type="submit" class="btn btn-primary" id="chatSendBtn">Gönder</button>' +
             '</form></div></div>';
 
-        renderConversationList();
+        const search = document.getElementById('conversationSearch');
+        const filter = document.getElementById('conversationFilter');
+        if (search) {
+            search.addEventListener('input', function () { loadConversations(); });
+        }
+        if (filter) {
+            filter.addEventListener('change', function () { loadConversations(); });
+        }
         renderMessages();
         setupChatDropzone();
+        await loadConversations();
+    }
+
+    async function loadConversations() {
+        const search = document.getElementById('conversationSearch');
+        const filter = document.getElementById('conversationFilter');
+        const mode = filter ? filter.value : 'active';
+        const params = new URLSearchParams();
+        params.set('q', search ? search.value.trim() : '');
+        params.set('include_archived', mode === 'active' ? 'false' : 'true');
+        if (mode === 'active') params.set('archived', 'false');
+        if (mode === 'archived') params.set('archived', 'true');
+        try {
+            const response = await api('/api/conversations?' + params.toString());
+            state.chat.conversations = response.data || [];
+            renderConversationList();
+            const count = document.getElementById('conversationCount');
+            if (count) count.textContent = formatNumber(state.chat.conversations.length) + ' sohbet';
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
     }
 
     function setupChatDropzone() {
@@ -776,6 +831,33 @@
         }
         renderConversationList();
         renderMessages();
+    }
+
+    async function archiveConversation(id, archived) {
+        try {
+            await api('/api/conversations/' + encodeURIComponent(id) + '/archive', {
+                method: 'PATCH', body: { archived: archived }
+            });
+            if (archived && state.chat.activeId === id) newConversation();
+            showToast(archived ? 'Sohbet arşivlendi.' : 'Sohbet arşivden çıkarıldı.', 'success');
+            await loadConversations();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
+    }
+
+    async function deleteConversation(id) {
+        if (!window.confirm('Bu sohbet ve tüm mesajları kalıcı olarak silinsin mi?')) return;
+        try {
+            await api('/api/conversations/' + encodeURIComponent(id), { method: 'DELETE' });
+            if (state.chat.activeId === id) newConversation();
+            showToast('Sohbet silindi.', 'success');
+            await loadConversations();
+        } catch (error) {
+            if (error instanceof AuthError) return;
+            showToast(error.message, 'error');
+        }
     }
 
     function newConversation() {
@@ -889,9 +971,7 @@
                 recorded_metrics: data.recorded_metrics || []
             });
             if (isNew && state.chat.activeId !== null) {
-                const list = await api('/api/conversations');
-                state.chat.conversations = list.data || [];
-                renderConversationList();
+                await loadConversations();
             }
             clearChatAttachment();
             renderMessages();

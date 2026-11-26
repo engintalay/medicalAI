@@ -183,7 +183,7 @@ def _build_messages(query: str, sources: list, history: list) -> list:
 def _get_conversation(conn, conversation_id: int, user_id: int):
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT conversation_id, title FROM conversations "
+            "SELECT conversation_id, title, is_archived, archived_at FROM conversations "
             "WHERE conversation_id = %s AND user_id = %s",
             (conversation_id, user_id),
         )
@@ -270,11 +270,16 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
         conn = _config.connect_db()
         conversation_id = body.conversation_id
         if conversation_id is not None:
-            if not _get_conversation(conn, conversation_id, user_id):
+            conversation = _get_conversation(conn, conversation_id, user_id)
+            if not conversation:
                 return JSONResponse(
                     status_code=404,
                     content={"success": False, "error": "Konuşma bulunamadı."},
                 )
+            if conversation[2]:
+                return JSONResponse(status_code=400, content={
+                    "success": False, "error": "Arşivlenmiş sohbete mesaj eklemek için önce arşivden çıkarın."
+                })
             history = _history(conn, conversation_id)
         else:
             history = []
@@ -373,22 +378,121 @@ async def chat(body: ChatRequest, user: dict = Depends(require_patient)):
             conn.close()
 
 
-@router.get("/api/conversations", summary="Konuşma Listesi")
-async def list_conversations(user: dict = Depends(require_patient)):
+@router.get("/api/conversations", summary="Konuşma Listesi / Arama")
+async def list_conversations(
+    q: str = "",
+    include_archived: bool = False,
+    archived: bool | None = None,
+    user: dict = Depends(require_patient),
+):
+    query = (q or "").strip()
+    pattern = "%" + query + "%"
     conn = None
     try:
         conn = _config.connect_db()
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT conversation_id, title, created_at FROM conversations "
-                "WHERE user_id = %s ORDER BY conversation_id DESC",
-                (int(user["user_id"]),),
+                """
+                SELECT c.conversation_id, c.title, c.created_at,
+                       c.is_archived, c.archived_at
+                FROM conversations c
+                WHERE c.user_id = %s
+                  AND (%s OR c.is_archived = FALSE)
+                  AND (%s IS NULL OR c.is_archived = %s)
+                  AND (
+                    %s = '' OR c.title ILIKE %s OR EXISTS (
+                      SELECT 1 FROM conversation_messages m
+                      WHERE m.conversation_id = c.conversation_id
+                        AND m.content ILIKE %s
+                    )
+                  )
+                ORDER BY c.conversation_id DESC
+                LIMIT 200
+                """,
+                (int(user["user_id"]), bool(include_archived), archived, archived,
+                 query, pattern, pattern),
             )
             rows = cur.fetchall()
         return JSONResponse(status_code=200, content={"success": True, "data": [
-            {"id": r[0], "title": r[1], "created_at": r[2]} for r in rows
+            {
+                "id": r[0], "title": r[1], "created_at": r[2],
+                "is_archived": r[3], "archived_at": r[4],
+            }
+            for r in rows
         ]})
     except Exception as exc:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.patch("/api/conversations/{conversation_id}/archive", summary="Sohbeti Arşivle / Geri Yükle")
+async def archive_conversation(
+    conversation_id: int,
+    payload: dict,
+    user: dict = Depends(require_patient),
+):
+    archived = payload.get("archived")
+    if not isinstance(archived, bool):
+        return JSONResponse(status_code=400, content={
+            "success": False, "error": "archived boolean olmalı"
+        })
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE conversations SET is_archived = %s, archived_at = "
+                "CASE WHEN %s THEN NOW() ELSE NULL END "
+                "WHERE conversation_id = %s AND user_id = %s "
+                "RETURNING conversation_id, is_archived, archived_at",
+                (archived, archived, conversation_id, int(user["user_id"])),
+            )
+            row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return JSONResponse(status_code=404, content={
+                "success": False, "error": "Konuşma bulunamadı."
+            })
+        conn.commit()
+        return JSONResponse(status_code=200, content={
+            "success": True,
+            "data": {"id": row[0], "is_archived": row[1], "archived_at": row[2]},
+        })
+    except Exception as exc:
+        if conn:
+            conn.rollback()
+        return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.delete("/api/conversations/{conversation_id}", summary="Sohbeti Sil")
+async def delete_conversation(conversation_id: int, user: dict = Depends(require_patient)):
+    conn = None
+    try:
+        conn = _config.connect_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM conversations WHERE conversation_id = %s AND user_id = %s "
+                "RETURNING conversation_id",
+                (conversation_id, int(user["user_id"])),
+            )
+            row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            return JSONResponse(status_code=404, content={
+                "success": False, "error": "Konuşma bulunamadı."
+            })
+        conn.commit()
+        return JSONResponse(status_code=200, content={
+            "success": True, "message": "Sohbet silindi.", "data": {"id": row[0]}
+        })
+    except Exception as exc:
+        if conn:
+            conn.rollback()
         return JSONResponse(status_code=500, content={"success": False, "error": str(exc)[:160]})
     finally:
         if conn:

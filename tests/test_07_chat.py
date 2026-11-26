@@ -67,6 +67,45 @@ def test_chat_messages_alternate_for_strict_templates(client, patient_headers, f
         assert role == ("user" if index % 2 == 0 else "assistant")
 
 
+def test_conversation_archive_restore_delete(client, patient_headers, fake_llm):
+    created = client.post("/api/chat", headers=patient_headers, json={"message": "Arşiv testi"})
+    assert created.status_code == 200, created.text
+    cid = created.json()["data"]["conversation_id"]
+
+    archived = client.patch(f"/api/conversations/{cid}/archive", headers=patient_headers,
+                            json={"archived": True})
+    assert archived.status_code == 200, archived.text
+    active = client.get("/api/conversations", headers=patient_headers).json()["data"]
+    assert cid not in [item["id"] for item in active]
+    all_items = client.get("/api/conversations?include_archived=true", headers=patient_headers).json()["data"]
+    assert any(item["id"] == cid and item["is_archived"] for item in all_items)
+    assert client.get(f"/api/conversations/{cid}", headers=patient_headers).status_code == 200
+    blocked = client.post("/api/chat", headers=patient_headers,
+                          json={"message": "Devam", "conversation_id": cid})
+    assert blocked.status_code == 400
+
+    restored = client.patch(f"/api/conversations/{cid}/archive", headers=patient_headers,
+                            json={"archived": False})
+    assert restored.status_code == 200
+    assert client.post("/api/chat", headers=patient_headers,
+                       json={"message": "Devam", "conversation_id": cid}).status_code == 200
+    deleted = client.delete(f"/api/conversations/{cid}", headers=patient_headers)
+    assert deleted.status_code == 200
+    assert client.get(f"/api/conversations/{cid}", headers=patient_headers).status_code == 404
+
+
+def test_conversation_search_matches_message_content(client, patient_headers, fake_llm):
+    marker = "arama-" + uuid.uuid4().hex[:8]
+    created = client.post("/api/chat", headers=patient_headers, json={"message": marker})
+    cid = created.json()["data"]["conversation_id"]
+    client.post("/api/chat", headers=patient_headers, json={"message": "Başka bir konu"})
+    response = client.get("/api/conversations?q=" + marker, headers=patient_headers)
+    assert response.status_code == 200, response.text
+    ids = [item["id"] for item in response.json()["data"]]
+    assert cid in ids
+    assert len(ids) == 1
+
+
 def test_slow_llm_does_not_block_other_requests(client, patient_headers, monkeypatch):
     """LLM thread'de beklerken /health ve diğer istekler event loop'u kullanabilmeli."""
     started = threading.Event()

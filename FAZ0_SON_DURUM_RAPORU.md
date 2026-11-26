@@ -341,7 +341,8 @@ sudo systemctl status medical-ai
 - Hasta: `/api/auth/*`, `/api/user/me|profile|dashboard|export`, `/api/user/metrics` (POST, DELETE),
   `/api/uploads`, `/api/upload`, `/api/rag/ingest|add-document`, `/api/rag/upload`,
   `/api/rag/import-url`, `/api/rag/drug-search`, `/api/chat` (opsiyonel dosya),
-  `/api/conversations`, `/api/reminders`, `/api/notifications`,
+  `/api/conversations` (arama + arşiv durumu), `/api/conversations/{id}`,
+  `/api/conversations/{id}/archive`, `/api/reminders`, `/api/notifications`,
   `/api/user/notification-preferences`, `/api/research` (admin token).
 - Admin: `/admin/api/auth/login`, `/admin/api/config`, `/admin/api/llm/*`,
   `/admin/api/users` (GET list, POST create, PATCH status), `/admin/api/monitoring`, `/admin/api/uploads/stats`,
@@ -394,13 +395,13 @@ python -m pytest tests -q          # tüm sözleşme/regresyon testleri
 ## 6. Test
 
 - `tests/` altında parça başına test dosyaları ve ortak `conftest.py` (sahte OpenAI sunucusu).
-- Kabul/regresyon: 80 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
+- Kabul/regresyon: 82 test (alias'lar, secret maskeleme, guardrail, CSV/PDF, RAG cache,
   LLM anahtarının kaydedilmemesi, logout kara listesi, ekran rotaları, admin RAG CRUD,
   admin kullanıcı oluşturma ve aktiflik yönetimi, katı Jinja şablonuyla sohbet uyumu,
   LLM token/timeout ayarları, sohbet dosya ekleme ve otomatik ölçüm çıkarma,
   hasta metriği silme ve sahiplik kontrolü, yavaş LLM sırasında paralel istekler,
   ölçüm tarihi ve sistem giriş zamanının ayrı saklanması, RAG PDF/TXT yükleme,
-  prospektus.co ilaç arama ve URL içe aktarma).
+  prospektus.co ilaç arama ve URL içe aktarma, sohbet arama/arşiv/geri yükleme/silme).
 - Gerçek API anahtarı veya uzak tıbbi veri testlerde kullanılmaz.
 
 ## 7. Ekranlar (26 Kasım 2026)
@@ -427,7 +428,7 @@ API'lerin yanında kullanıcıya açık ekranlar da tamamlandı. Tüm sayfalar c
 | Adres | Ekran |
 |-------|-------|
 | `/patient` | Dashboard: profil özeti, kilo grafiği, son metrikler, hatırlatmalar, CSV/PDF indirme |
-| `/patient/chat` | RAG sohbeti, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
+| `/patient/chat` | RAG sohbeti, **sohbet arama**, arşivleme/geri yükleme/silme, konuşma geçmişi, **görsel/PDF ekleme + vision okuma + otomatik ölçüm kaydı**, kaynak göstergeleri |
 | `/patient/metrics` | Ölçüm tarihi girişi, arama, kategori filtresi, çoklu seçim/toplu silme ve geçmiş |
 | `/patient/uploads` | Dosya yükleme (sürükle-bırak), listeleme, metin çıkarma, silme |
 | `/patient/reminders` | Hatırlatma CRUD ve bildirim tercihleri |
@@ -471,5 +472,8 @@ Paralel test: sohbet beklerken /health 200 (maks 0.14 sn), dashboard 200 (~0.2 s
 GET /admin/api/rag/drug-search?q=majezik 200 (19 sonuç)
 POST /admin/api/rag/import-url 200 (Majezik sayfası → 12 parça)
 POST /admin/api/rag/upload PDF 200 (ASCII85/Flate PDF yerel okundu → 1 parça)
+GET /api/conversations?q=... 200 (mesaj içeriğinde arama)
+PATCH /api/conversations/{id}/archive 200 → aktif listeden çıkar, arşivde görünür
+PATCH ... archived=false 200 → geri yükle; DELETE /api/conversations/{id} 200 → detay 404
 ```
 Geçici canlı test kullanıcısı ve QA RAG/içerik kayıtları doğrulama sonrası silindi.

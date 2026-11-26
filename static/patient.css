@@ -68,6 +68,10 @@ body { background: #f8fafc; }
 }
 .conv-item:hover { background: #f8fafc; }
 .conv-item.active { background: var(--primary-soft); color: #1d4ed8; font-weight: 600; }
+.conv-wrap { border-bottom: 1px solid var(--border); }
+.conv-wrap.active { background: var(--primary-soft); }
+.conv-wrap .conv-item { border-bottom: none; }
+.conv-actions { display: flex; gap: 6px; padding: 0 10px 10px 14px; }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conv-date { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
 
