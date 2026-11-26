@@ -1211,6 +1211,14 @@
             recorded_at: recordedAt ? new Date(recordedAt).toISOString() : null
         };
         const editingId = state.metrics.editingId;
+        if (editingId === null) {
+            const confirmed = await MedicalDialog.confirm(
+                payload.name + ': ' + formatNumber(payload.value, 2) + ' ' + (payload.unit || '') +
+                '\nÖlçüm tarihi: ' + formatDateTime(payload.recorded_at),
+                { title: 'Metriği kaydet', confirmText: 'Kaydet', cancelText: 'Vazgeç', danger: false }
+            );
+            if (!confirmed) return;
+        }
         const button = form.querySelector('button[type="submit"]');
         if (button) button.disabled = true;
         try {
