@@ -671,8 +671,8 @@
             '<div id="chatAttachment" class="chat-attachment hidden"></div>' +
             '<form class="chat-composer" data-form="chat" id="chatForm">' +
             '<input type="file" id="chatFile" class="hidden" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain">' +
-            '<button type="button" class="btn btn-secondary" id="chatAttachBtn" title="Dosya ekle">📎</button>' +
-            '<textarea id="chatInput" name="message" placeholder="Mesajınızı yazın veya ölçüm resmi ekleyin... (Enter: gönder)"></textarea>' +
+            '<button type="button" class="btn btn-secondary" id="chatAttachBtn" title="Dosya ekle ve otomatik analiz et">📎</button>' +
+            '<textarea id="chatInput" name="message" placeholder="Mesaj yazın veya ölçüm resmi ekleyin... (Enter: gönder)"></textarea>' +
             '<button type="submit" class="btn btn-primary" id="chatSendBtn">Gönder</button>' +
             '</form></div></div>';
 
@@ -714,7 +714,7 @@
         }
         box.className = 'chat-attachment';
         box.innerHTML = '<span>📎 <strong>' + esc(item.filename) + '</strong></span>' +
-            '<span class="hint">' + (item.uploading ? 'Yükleniyor...' : 'Gönderildiğinde okunacak') + '</span>' +
+            '<span class="hint">' + (item.uploading ? 'Yükleniyor...' : 'Analiz için hazır') + '</span>' +
             '<button type="button" class="btn btn-secondary btn-sm" id="chatRemoveAttachment">Kaldır</button>';
     }
 
@@ -752,7 +752,12 @@
                 filename: payload.data.filename || file.name,
                 uploading: false
             };
-            showToast('Dosya yüklendi. Gönderdiğinizde okunacak.', 'success');
+            showToast('Dosya yüklendi, analiz başlıyor...', 'success');
+            // Kullanıcı dosyayı seçtiğinde ek "Gönder" aşamasına ihtiyaç duymasın.
+            const form = document.getElementById('chatForm');
+            if (form && state.page === 'chat' && form.requestSubmit) {
+                form.requestSubmit();
+            }
         } catch (error) {
             state.chat.upload = null;
             showToast(error.message, 'error');
