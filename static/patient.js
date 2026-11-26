@@ -1423,8 +1423,8 @@
             item.points.forEach(function (point) {
                 const y = margin.top + (1 - (point.value - min) / span) * plotHeight;
                 const detail = formatDateTime(point.time) + ' · ' + formatNumber(point.value, 2) + ' ' + point.unit;
-                svg += '<circle cx="' + x(point.time).toFixed(2) + '" cy="' + y.toFixed(2) + '" r="4.5" ' +
-                    'fill="' + color + '" class="chart-point" tabindex="0" data-chart-point="1" ' +
+                svg += '<circle cx="' + x(point.time).toFixed(2) + '" cy="' + y.toFixed(2) + '" r="6" ' +
+                    'fill="' + color + '" stroke="#ffffff" stroke-width="2" class="chart-point" tabindex="0" data-chart-point="1" ' +
                     'data-detail="' + esc(detail) + '"><title>' + esc(detail) + '</title></circle>';
             });
             if (item.points.length === 1) {
@@ -1450,15 +1450,22 @@
                 ' · son ' + esc(formatNumber(last.value, 2)) + '</span></div>');
         });
         svg += '</svg>';
+        const defaultPoint = series[series.length - 1].points[series[series.length - 1].points.length - 1];
+        const defaultDetail = series[series.length - 1].name + ' · ' + formatDateTime(defaultPoint.time) +
+            ' · ' + formatNumber(defaultPoint.value, 2) + ' ' + defaultPoint.unit;
         container.innerHTML = svg + '<div class="chart-tooltip hidden" id="metricsChartTooltip"></div>' +
+            '<div class="chart-detail" id="metricsChartDetail">' + esc(defaultDetail) + '</div>' +
             '<div class="chart-legend">' + legend.join('') + '</div>' +
-            '<div class="card-note">Farklı birimleri karşılaştırmak için her metrik kendi min–maks aralığına normalize edildi. ' +
+            '<div class="card-note">Tek/iki değerli serilerde gerçek değerler noktaların yanında gösterilir. ' +
+            'Farklı birimleri karşılaştırmak için her metrik kendi min–maks aralığına normalize edildi. ' +
             'Noktaların üzerine gelerek tarih ve ölçüm değerini görebilirsin.</div>';
 
         const tooltip = document.getElementById('metricsChartTooltip');
         function showTooltip(event, circle) {
             if (!tooltip) return;
             tooltip.textContent = circle.getAttribute('data-detail') || '';
+            const detail = document.getElementById('metricsChartDetail');
+            if (detail) detail.textContent = tooltip.textContent;
             tooltip.classList.remove('hidden');
             const rect = container.getBoundingClientRect();
             let left = event.clientX - rect.left + 12;
@@ -1481,6 +1488,8 @@
                 const rect = container.getBoundingClientRect();
                 const pointRect = circle.getBoundingClientRect();
                 tooltip.textContent = circle.getAttribute('data-detail') || '';
+                const detail = document.getElementById('metricsChartDetail');
+                if (detail) detail.textContent = tooltip.textContent;
                 tooltip.classList.remove('hidden');
                 tooltip.style.left = Math.max(8, pointRect.left - rect.left + 10) + 'px';
                 tooltip.style.top = Math.max(8, pointRect.top - rect.top - 38) + 'px';
