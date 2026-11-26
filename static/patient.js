@@ -1432,6 +1432,20 @@
         if (cancel) cancel.classList.add('hidden');
     }
 
+    async function refreshMetricsData() {
+        const response = await api('/api/user/dashboard');
+        state.metrics.items = (response.data && response.data.metrics) || [];
+        renderMetricsTable();
+        const chartList = document.getElementById('chartMetricList');
+        if (chartList) {
+            const selected = new Set(state.metrics.chartNames);
+            chartList.innerHTML = chartMetricOptionsHTML();
+            chartList.querySelectorAll('[data-chart-metric]').forEach(function (input) {
+                input.checked = selected.has(input.getAttribute('data-chart-metric'));
+            });
+        }
+    }
+
     async function addMetric(form) {
         const recordedAt = form.elements.recorded_at.value;
         const payload = {
@@ -1457,11 +1471,15 @@
                     method: 'PUT', body: payload
                 });
                 showToast('Metrik güncellendi.', 'success');
+                await navigate('/patient/metrics', { push: false });
             } else {
                 await api('/api/user/metrics', { method: 'POST', body: payload });
-                showToast('Metrik kaydedildi.', 'success');
+                form.elements.value.value = '';
+                form.elements.recorded_at.value = localDateTimeInputValue();
+                showToast('Metrik kaydedildi. Aynı metrikle devam edebilirsin.', 'success');
+                await refreshMetricsData();
+                form.elements.value.focus();
             }
-            await navigate('/patient/metrics', { push: false });
         } catch (error) {
             if (error instanceof AuthError) return;
             showToast(error.message, 'error');
